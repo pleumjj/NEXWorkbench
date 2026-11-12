@@ -1,0 +1,30 @@
+{
+  "name": "nex-workbench",
+  "private": true,
+  "version": "0.3.0",
+  "description": "NEX Workbench \u2014 local-first work intelligence: MemNEX (Local System Intelligence) and DevNEX (Local Developer Control Center) on http://localhost:3900.",
+  "workspaces": [
+    "packages/*",
+    "modules/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "npm run build:core && concurrently -k -n CORE,API,WEB -c gray,cyan,magenta \"npm:watch\" \"npm run dev -w @nex/workbench-api\" \"npm run dev -w @nex/workbench-web\"",
+    "build:core": "tsc -b tsconfig.build.json",
+    "watch": "tsc -b tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -b tsconfig.build.json && npm run typecheck -w @nex/workbench-web",
+    "lint": "npm run typecheck",
+    "test": "tsc -b tsconfig.build.json && node --disable-warning=ExperimentalWarning --test \"packages/*/dist/**/*.test.js\" \"modules/*/dist/**/*.test.js\" \"apps/*/dist/**/*.test.js\"",
+    "build": "tsc -b tsconfig.build.json && npm run build -w @nex/workbench-web",
+    "start": "concurrently -k -n API,WEB -c cyan,magenta \"npm run start -w @nex/workbench-api\" \"npm run start -w @nex/workbench-web\"",
+    "clean": "node scripts/clean.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.2"
+  }
+}

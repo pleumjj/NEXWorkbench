@@ -1,0 +1,7 @@
+{
+  "name": "NEX Workbench",
+  "services": [
+    { "name": "workbench-web", "type": "frontend", "command": "npm run dev -w @nex/workbench-web", "port": 3900 },
+    { "name": "workbench-api", "type": "backend", "command": "npm run dev -w @nex/workbench-api", "port": 3901 }
+  ]
+}

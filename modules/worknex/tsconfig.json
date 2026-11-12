@@ -1,0 +1,25 @@
+{
+  "extends": "../../configs/typescript/base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/shared"
+    },
+    {
+      "path": "../../packages/config"
+    },
+    {
+      "path": "../../packages/platform-core"
+    },
+    {
+      "path": "../../packages/process-core"
+    }
+  ]
+}

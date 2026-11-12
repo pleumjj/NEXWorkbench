@@ -1,0 +1,18 @@
+node_modules
+dist
+.next
+*.tsbuildinfo
+.env
+.env.local
+*.log
+.DS_Store
+.playwright-mcp
+# Local product data (preferences, activity, icon cache) — never commit
+.memnex
+.devnex
+.nex
+.filenex
+.worknex
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

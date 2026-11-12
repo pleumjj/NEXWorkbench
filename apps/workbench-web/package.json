@@ -1,0 +1,28 @@
+{
+  "name": "@nex/workbench-web",
+  "version": "0.3.0",
+  "private": true,
+  "description": "NEX Workbench web shell (Next.js) \u2014 Home, MemNEX and DevNEX on http://localhost:3900.",
+  "scripts": {
+    "dev": "node ../../scripts/next.mjs dev",
+    "build": "next build",
+    "start": "node ../../scripts/next.mjs start",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@nex/config": "*",
+    "@nex/ui": "*",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@nex/devnex": "*",
+    "@nex/memnex": "*",
+    "@nex/shared": "*",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@nex/worknex": "*",
+    "@nex/filenex": "*"
+  }
+}

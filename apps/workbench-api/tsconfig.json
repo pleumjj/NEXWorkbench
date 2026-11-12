@@ -1,0 +1,24 @@
+{
+  "extends": "../../configs/typescript/nest.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "composite": true,
+    "declaration": true
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/config" },
+    { "path": "../../packages/logger" },
+    { "path": "../../packages/platform-core" },
+    { "path": "../../packages/process-core" },
+    { "path": "../../packages/system-core" },
+    { "path": "../../packages/telemetry-core" },
+    { "path": "../../modules/memnex" },
+    { "path": "../../modules/devnex" },
+    { "path": "../../modules/worknex" },
+    { "path": "../../modules/filenex" }
+  ]
+}
