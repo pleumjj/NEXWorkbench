@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Icon, LocalFooter, Wordmark, useTheme } from '@nex/ui';
+import { getLanguage, languageOf, setLanguage, type Language } from '@nex/i18n';
 import { Ctx, type Badges, type WorkbenchContext, type WorkbenchSummary } from './context';
 import { MODULES, moduleFor, sectionsOf } from './modules';
 import { CommandPalette } from './CommandPalette';
@@ -18,6 +19,22 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [badges, setBadgeMap] = useState<Record<string, Badges>>({});
   const [theme, setTheme] = useTheme('nex.theme');
+
+  // UI language: the Workbench preference, or the operating system's language ("Follow system", the default).
+  // The first render is English (same as the server render); the content remounts once the language is known.
+  const [lang, setLang] = useState<Language>('en');
+  const pref = summary?.preferences.language;
+  useEffect(() => {
+    const apply = (l: Language) => {
+      setLanguage(l);
+      document.documentElement.lang = l;
+      try { localStorage.setItem('nex.lang', l); } catch { /* private mode */ }
+      setLang(l);
+    };
+    try { const saved = localStorage.getItem('nex.lang'); if (!pref && (saved === 'th' || saved === 'en')) apply(saved); } catch { /* private mode */ }
+    if (pref === 'en' || pref === 'th') apply(pref);
+    else if (pref === 'system') fetch('/api/system/locale').then(r => r.json()).then(j => apply(languageOf(j.locale))).catch(() => apply(languageOf(navigator.language)));
+  }, [pref]);
 
   const relaxed = summary?.preferences.refresh === 'relaxed';
   const every = useCallback((ms: number) => (relaxed ? ms * 3 : ms), [relaxed]);
@@ -52,15 +69,15 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
   const isEnabled = useCallback((id: string) => !summary?.preferences.disabledModules.includes(id), [summary]);
 
   const ctx = useMemo<WorkbenchContext>(() => ({
-    summary, offline, refreshSummary, theme, setTheme, openPalette: () => setPaletteOpen(true), every, setBadges, isEnabled,
-  }), [summary, offline, refreshSummary, theme, setTheme, every, setBadges, isEnabled]);
+    summary, offline, refreshSummary, theme, setTheme, openPalette: () => setPaletteOpen(true), every, setBadges, isEnabled, language: lang,
+  }), [summary, offline, refreshSummary, theme, setTheme, every, setBadges, isEnabled, lang]);
 
   const current = moduleFor(pathname);
   const attentionOf = (name: string) => summary?.attention.filter(a => a.sourceModule === name && a.severity !== 'info').length || undefined;
 
   return (
     <Ctx.Provider value={ctx}>
-      <main className="shell">
+      <main className="shell" key={lang} data-lang={getLanguage()}>
         <aside className="sidebar">
           <Link href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
             <Wordmark top="NEX" bottom="WORK" sub={['Workbench', 'Local-first']} label="NEX Workbench" />
@@ -105,7 +122,7 @@ export function WorkbenchShell({ children }: { children: ReactNode }) {
 
         <section className="content">{children}</section>
       </main>
-      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && <CommandPalette key={lang} onClose={() => setPaletteOpen(false)} />}
     </Ctx.Provider>
   );
 }

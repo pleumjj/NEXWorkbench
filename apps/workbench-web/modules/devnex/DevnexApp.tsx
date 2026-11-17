@@ -10,6 +10,7 @@ import {
   AppIcon, ConfirmDialog, EmptyState, FilterChips, Icon, Meter, Modal, Pill, SearchField, Segmented, Setting, Stat, Toast, Wordmark as UiWordmark,
   createPost, fmtBytes, gbNum, since, useNow, useToast,
 } from '@nex/ui';
+import { localeTag } from '@nex/i18n';
 import { useWorkbench } from '../../shell/context';
 import { PageHeader } from '../../shell/PageHeader';
 
@@ -200,7 +201,7 @@ export function DevnexApp() {
           onCancel={() => setConfirm(null)} onConfirm={() => act(`${confirm.project.name} stopped.`, () => post(`${API}/projects/${confirm.project.id}/stop`, { confirmed: true }))}>
           <p>DevNEX sends a normal stop request to each running service:</p>
           <ul className="confirm-list">{confirm.project.services.filter(s => isUp(s) && s.source !== 'docker-compose').map(s => (
-            <li key={s.id}><span>{s.name}{s.port ? ` :${s.port}` : ''}</span><span className="fine" style={{ margin: 0 }}>{s.managedBy === 'devnex' ? 'started by DevNEX' : `PID ${s.pid}, started elsewhere`}</span></li>
+            <li key={s.id}><span translate="no">{s.name}{s.port ? ` :${s.port}` : ''}</span><span className="fine" style={{ margin: 0 }}>{s.managedBy === 'devnex' ? 'started by DevNEX' : `PID ${s.pid}, started elsewhere`}</span></li>
           ))}</ul>
         </ConfirmDialog>
       )}
@@ -219,7 +220,7 @@ export function DevnexApp() {
             <dt>Current owner</dt><dd>{confirm.conflict.usedBy.processName ?? 'unknown process'}</dd>
             <dt>PID</dt><dd>{confirm.conflict.usedBy.pid ?? 'hidden by the OS'}</dd>
             <dt>Associated project</dt><dd>{confirm.conflict.usedBy.projectName ?? 'not tied to a known project'}</dd>
-            <dt>Requested by</dt><dd>{confirm.conflict.requestedBy.projectName} / {confirm.conflict.requestedBy.serviceName}</dd>
+            <dt>Requested by</dt><dd translate="no">{confirm.conflict.requestedBy.projectName} / {confirm.conflict.requestedBy.serviceName}</dd>
           </dl>
           <div className="modal-actions">
             <button className="btn btn-ghost" onClick={() => setConfirm(null)}>Cancel start</button>
@@ -325,7 +326,7 @@ function ProjectCard({ project: p, cores, issues, onConfirm, onLogs }: { project
   return (
     <article className="tile span-6 module-card">
       <div className="tile-head">
-        <div><h3>{p.name}</h3><p className="path" title={p.path}>{p.path}</p></div>
+        <div><h3 translate="no">{p.name}</h3><p className="path" title={p.path}>{p.path}</p></div>
         <StatusPill status={p.status} />
       </div>
       <dl className="kv">
@@ -381,7 +382,7 @@ function ServiceRows({ services, cores, onStart, onConfirm, onLogs, showProject 
             <div className="tr cols-services">
               <span className="cell-app">
                 <AppIcon kind={s.type === 'container' ? 'container' : 'terminal'} />
-                <span><b>{s.name}</b><small>{showProject ? `${s.projectName} · ` : ''}{s.type}{s.command ? ` · ${s.command}` : ''}</small>{s.detail && <small className="about">{s.detail}</small>}</span>
+                <span><b translate="no">{s.name}</b><small>{showProject ? `${s.projectName} · ` : ''}{s.type}{s.command ? ` · ${s.command}` : ''}</small>{s.detail && <small className="about">{s.detail}</small>}</span>
               </span>
               <span><StatusPill status={s.status} /></span>
               <span className="num">{s.port ?? '—'}</span>
@@ -450,7 +451,7 @@ function Projects({ data, onChanged, setToast, focusAdd }: {
               <Link className="cell-app" href={`/devnex/projects/${p.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                 <span className="chev"><Icon name="chevron" size={14} /></span>
                 <AppIcon kind="folder" />
-                <span><b>{p.name}</b><small>{p.origin === 'detected' ? 'Detected from a running process' : 'Registered'}{p.packageManager ? ` · ${p.packageManager}` : ''}{p.signals.devnexConfig ? ' · devnex.config.json' : ''}</small></span>
+                <span><b translate="no">{p.name}</b><small>{p.origin === 'detected' ? 'Detected from a running process' : 'Registered'}{p.packageManager ? ` · ${p.packageManager}` : ''}{p.signals.devnexConfig ? ' · devnex.config.json' : ''}</small></span>
               </Link>
               <span><StatusPill status={p.status} /></span>
               <span className="num r">{p.services.filter(s => s.status === 'RUNNING').length}/{p.services.length}</span>
@@ -531,7 +532,7 @@ function ProjectPage({ project: p, cores, updatedAt, busy, onStartProject, onOpe
           <p className="eyebrow"><Icon name="branch" size={13} /> Git</p>
           {!detail ? <p className="fine">Reading…</p> : detail.git.isRepo ? (
             <dl className="kv">
-              <dt>Branch</dt><dd>{detail.git.branch}</dd>
+              <dt>Branch</dt><dd translate="no">{detail.git.branch}</dd>
               <dt>Changed files</dt><dd>{detail.git.changed}{detail.git.untracked ? ` · ${detail.git.untracked} untracked` : ''}</dd>
               <dt>Uncommitted</dt><dd>{detail.git.changed + detail.git.untracked ? 'Yes' : 'No'}</dd>
               <dt>Ahead / behind</dt><dd>{detail.git.upstream ? `${detail.git.ahead} / ${detail.git.behind}` : 'No upstream'}</dd>
@@ -598,7 +599,7 @@ function Ports({ data, onConfirm, initialQuery }: { data: { ports: PortEntry[]; 
           <dl className="kv">
             <dt>Current owner</dt><dd>{c.usedBy.processName ?? 'unknown'}{c.usedBy.pid ? ` · PID ${c.usedBy.pid}` : ''}</dd>
             <dt>Associated project</dt><dd>{c.usedBy.projectName ?? 'not tied to a known project'}</dd>
-            <dt>Requested by</dt><dd>{c.requestedBy.projectName} / {c.requestedBy.serviceName}</dd>
+            <dt>Requested by</dt><dd translate="no">{c.requestedBy.projectName} / {c.requestedBy.serviceName}</dd>
           </dl>
           <div className="row">
             <button className="btn btn-line" onClick={() => { setFilter('All'); setQuery(String(c.port)); setOpen(c.port); }}>View process</button>
@@ -625,7 +626,7 @@ function Ports({ data, onConfirm, initialQuery }: { data: { ports: PortEntry[]; 
                 <span className="chev"><Icon name="chevron" size={14} /></span>
                 <span><b>{p.processName ?? 'unknown'}</b><small>{p.pid ? `PID ${p.pid}` : 'owner hidden by the OS'} · {p.address}</small></span>
               </button>
-              <span>{p.projectName ? <><b>{p.projectName}</b>{p.serviceName && <small className="fine" style={{ display: 'block', margin: 0 }}>{p.serviceName}</small>}</> : <span className="fine" style={{ margin: 0 }}>Unknown process</span>}</span>
+              <span translate="no">{p.projectName ? <><b translate="no">{p.projectName}</b>{p.serviceName && <small className="fine" style={{ display: 'block', margin: 0 }} translate="no">{p.serviceName}</small>}</> : <span className="fine" style={{ margin: 0 }}>Unknown process</span>}</span>
               <span className="cell-actions">
                 {p.pid && p.projectId && <button className="btn btn-line" onClick={() => onConfirm({ kind: 'stop-process', pid: p.pid!, name: p.processName ?? 'process', port: p.port })}><Icon name="stop" size={13} />Stop</button>}
               </span>
@@ -704,7 +705,7 @@ function Logs({ services, selected, onSelect }: { services: Svc[]; selected: str
       <div className="logview-body" ref={body} role="log" aria-live="off">
         {visible.length ? visible.map(l => (
           <div key={l.seq} className={`logline lv-${l.level} st-${l.stream}`}>
-            <time>{new Date(l.at).toLocaleTimeString()}</time><i aria-hidden /><span>{l.text}</span>
+            <time>{new Date(l.at).toLocaleTimeString(localeTag())}</time><i aria-hidden /><span>{l.text}</span>
           </div>
         )) : <EmptyState title={lines.length ? 'No lines match' : 'Waiting for output…'} />}
       </div>
@@ -720,7 +721,7 @@ function EnvTable({ rows }: { rows: EnvReport['rows'] }) {
       <div className="tr th cols-env"><span>Variable</span><span>Status</span><span>Value (masked)</span><span>Source</span></div>
       {rows.map(r => (
         <div className="tr cols-env" key={r.key} style={{ borderTop: '1px solid var(--line)' }}>
-          <span className="mono"><b>{r.key}</b></span>
+          <span className="mono"><b translate="no">{r.key}</b></span>
           <span><Pill tone={r.status === 'configured' ? 'ok' : r.status === 'extra' ? 'muted' : 'bad'} lock={r.sensitive}>{r.status === 'configured' ? 'Configured' : r.status === 'missing' ? 'Missing' : r.status === 'empty' ? 'Empty' : 'Not in example'}</Pill></span>
           <span className="mono">{r.preview ?? '—'}</span>
           <span className="fine" style={{ margin: 0 }}>{r.source ?? '—'}</span>

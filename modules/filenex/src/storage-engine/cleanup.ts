@@ -185,7 +185,7 @@ const CHECKS: Record<CleanupCandidate['group'], string> = {
  * It lists exact paths and states the safety rules: nothing is deleted by FileNEX, and nothing should be deleted
  * without the user's explicit confirmation per item.
  */
-export function cleanupReportMarkdown(cands: CleanupCandidate[], ctx: { now: number; disk?: { label: string; freeBytes: number; totalBytes: number; status: string } | null; scope: string }) {
+export function cleanupReportMarkdown(cands: CleanupCandidate[], ctx: { plan?: string | null; now: number; disk?: { label: string; freeBytes: number; totalBytes: number; status: string } | null; scope: string }) {
   const counted = recoverySummary(cands);
   const groups = new Map<CleanupCandidate['group'], CleanupCandidate[]>();
   for (const c of cands) groups.set(c.group, [...(groups.get(c.group) ?? []), c]);
@@ -204,6 +204,7 @@ export function cleanupReportMarkdown(cands: CleanupCandidate[], ctx: { now: num
     '5. Never remove source code, `.git`, `.env*`, databases, documents, photos or videos — they are deliberately not in this list.',
     '6. *Review carefully* items need a question to the user; *Safe to review* items still need the user’s OK, but are regeneratable.',
     '7. After each step, report what was removed and the free space (`df -h ~`).', '');
+  if (ctx.plan) L.push(ctx.plan);
   L.push('## Summary', '', '| Group | Items | Size | Counted as recoverable |', '|---|---:|---:|---:|');
   for (const [g, items] of order) L.push(`| ${GROUP_LABEL[g]} | ${items.length} | ${fmtB(items.reduce((n, c) => n + c.bytes, 0))} | ${fmtB(counted.groups.find(x => x.group === g)?.bytes ?? 0)} |`);
   L.push('');

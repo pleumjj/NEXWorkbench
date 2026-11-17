@@ -43,14 +43,17 @@ export type WorkbenchPreferences = {
   disabledModules: string[];
   /** Polling cadence for live data in the UI. */
   refresh: 'normal' | 'relaxed';
+  /** UI language: follow the operating system (default), or English / Thai. */
+  language: 'system' | 'en' | 'th';
 };
-export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = { disabledModules: [], refresh: 'normal' };
+export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = { disabledModules: [], refresh: 'normal', language: 'system' };
 
 export function normalizeWorkbenchPreferences(raw: unknown): WorkbenchPreferences {
   const r = (raw ?? {}) as Partial<WorkbenchPreferences>;
   return {
     disabledModules: Array.isArray(r.disabledModules) ? r.disabledModules.filter((x): x is string => typeof x === 'string') : [],
     refresh: r.refresh === 'relaxed' ? 'relaxed' : 'normal',
+    language: r.language === 'en' || r.language === 'th' ? r.language : 'system',
   };
 }
 

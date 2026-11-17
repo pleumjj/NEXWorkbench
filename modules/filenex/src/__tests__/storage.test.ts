@@ -80,6 +80,7 @@ function jsRepo(dir: string, opts: { ageMs?: number } = {}) {
   age(join(dir, 'logs'), 30 * DAY);
   file(join(dir, '.git/objects/pack/p.pack'), 20_000, a);
   file(join(dir, 'public/logo.png'), 5000, a);
+  if (a) for (const d of ['node_modules', '.next', 'dist', 'coverage']) age(join(dir, d), a);
 }
 
 /* ═════════════ Critical privacy: DevNEX registration is not FileNEX consent ═════════════ */
@@ -391,7 +392,7 @@ test('safety · cleanup preview lists exact paths and deletes nothing', async ()
   for (const c of pick) assert.ok(existsSync(c.path), `${c.path} still exists`);
   // There is no delete operation in the storage engine.
   const methods = Object.getOwnPropertyNames(StorageEngine.prototype);
-  const destructive = methods.filter(m => /delete|remove(?!d)|prune|trash|unlink|purge|wipe|^rm|^clean(?!up(Preview|Report)$)/i.test(m));
+  const destructive = methods.filter(m => /delete|remove(?!d)|prune|trash|unlink|purge|wipe|^rm|^clean(?!up(Preview|Report|Plan)$)/i.test(m));
   assert.deepEqual(destructive, [], 'no delete operation exists');
   await assert.rejects(engine.storage.cleanupPreview([]), /at least one/);
 });
@@ -577,4 +578,32 @@ test('safety · exported report for an assistant: exact paths, safety rules, sco
   assert.ok(!sel.includes('node_modules`'));
   assert.ok(existsSync(join(home, 'E/old/node_modules')));
   assert.match(cleanupReportMarkdown([], { now: NOW, scope: 'x' }), /potentially recoverable \(conservative, each byte once\):\*\* 0/);
+});
+
+test('plan · suggested steps: build output first, idle deps with keep list, worktrees checked, personal files left to the user', async () => {
+  const { engine, home, approve } = makeEngine({ projects: h => [project(h, 'P/live', { runningServices: 1, status: 'RUNNING' }), project(h, 'P/old-a'), project(h, 'P/old-b')], worktree: wtGit });
+  jsRepo(join(home, 'P/live'));
+  jsRepo(join(home, 'P/old-a'), { ageMs: 200 * DAY });
+  jsRepo(join(home, 'P/old-b'), { ageMs: 200 * DAY });
+  withWorktree(home);
+  file(join(home, 'Downloads/old-thing.bin'), 11 * MB, 300 * DAY);
+  approve('P'); approve('Dev'); approve('Downloads');
+  await engine.storage.scanAll();
+  const plan = await engine.storage.cleanupPlan();
+  assert.match(plan.headline, /nothing has been deleted/);
+  assert.deepEqual(plan.steps.map(s => s.key), ['build', 'idle-deps', 'check-first', 'your-call']);
+  const build = plan.steps[0];
+  assert.ok(build.items.some(i => i.label === 'old-a/.next'), 'labels are relative to the approved folder');
+  assert.ok(!build.items.some(i => i.label.startsWith('live/')), 'running project skipped');
+  assert.ok(build.keep.some(k => k.label === 'live' && /services are running/.test(k.reason)));
+  const deps = plan.steps[1];
+  assert.deepEqual(deps.items.map(i => i.label).sort(), ['old-a/node_modules', 'old-b/node_modules', 'topo/node_modules']);
+  assert.ok(deps.keep.some(k => k.label === 'live'));
+  const check = plan.steps[2];
+  assert.ok(check.items.some(i => /worktree feat\/cr-046-group-compose/i.test(i.label) && /uncommitted/.test(i.note ?? '')));
+  assert.deepEqual(plan.steps[2].ids, [], '“check first” never offers bulk selection');
+  assert.deepEqual(plan.steps[3].ids, [], 'personal files are never bulk-selected');
+  assert.ok(plan.steps[3].items.some(i => /Old downloads/.test(i.label)));
+  const md = await engine.storage.cleanupReport();
+  assert.match(md, /## Suggested plan[\s\S]*### 1\. Build output/);
 });

@@ -134,6 +134,7 @@ export class WorkbenchService {
     return this.core.preferences.update(p => ({
       disabledModules: Array.isArray(patch.disabledModules) ? patch.disabledModules.filter(id => known.has(id)) : p.disabledModules,
       refresh: patch.refresh === 'relaxed' || patch.refresh === 'normal' ? patch.refresh : p.refresh,
+      language: patch.language === 'system' || patch.language === 'en' || patch.language === 'th' ? patch.language : p.language,
     }));
   }
 }

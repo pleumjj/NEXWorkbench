@@ -130,7 +130,7 @@ function AttentionRow({ item }: { item: AttentionItem }) {
       <i aria-hidden />
       <div>
         <span className="src">{item.sourceModule}</span>
-        <b>{item.title}</b>
+        <b translate="no">{item.title}</b>
         <p>{item.description}</p>
       </div>
       {item.action ? <Link className="btn btn-line" href={item.action}>{item.actionLabel ?? 'Review'}</Link> : <span />}

@@ -1,0 +1,11 @@
+{
+  "extends": "../../configs/typescript/base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src"],
+  "exclude": ["src/jsx-runtime.ts", "src/jsx-dev-runtime.ts"],
+  "references": []
+}

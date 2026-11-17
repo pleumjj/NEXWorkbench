@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
   // SSE (live logs, events) must not be gzip-buffered by the dev proxy.
   compress: false,
   // The shared design system is consumed as TypeScript source.
-  transpilePackages: ['@nex/ui'],
+  transpilePackages: ['@nex/ui', '@nex/i18n'],
   async rewrites() {
     return [{ source: '/api/:path*', destination: `http://127.0.0.1:${PORTS.api}/:path*` }];
   },

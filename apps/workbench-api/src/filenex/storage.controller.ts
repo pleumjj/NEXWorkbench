@@ -41,6 +41,9 @@ export class FilenexStorageController {
   @Get('developer/:projectId') developerDetail(@Param('projectId') id: string) { return handle(() => this.storage.developerDetail(id)); }
 
   @Get('cleanup-candidates') candidates() { return handle(() => this.storage.candidates()); }
+  /** Suggested, explained cleanup plan (deterministic rules; suggestions only). */
+  @Get('cleanup-plan') plan() { return handle(() => this.storage.cleanupPlan()); }
+
   /** Markdown report (download) for an assistant to continue the cleanup with the user. Read-only. */
   @Get('cleanup-report.md') @Header('Content-Type', 'text/markdown; charset=utf-8') @Header('Content-Disposition', 'attachment; filename="filenex-cleanup-report.md"')
   report(@Query('ids') ids?: string, @Query('risk') risk?: string, @Query('project') project?: string) {

@@ -14,12 +14,13 @@ export class WorkbenchController {
   @Get('activity') activity() { return this.core.activity.toArray().reverse(); }
   @Get('settings') settings() { return this.workbench.settings(); }
 
-  @Post('settings') update(@Body() body: { disabledModules?: unknown; refresh?: unknown }) {
+  @Post('settings') update(@Body() body: { disabledModules?: unknown; refresh?: unknown; language?: unknown }) {
     if (body?.disabledModules !== undefined && !(Array.isArray(body.disabledModules) && body.disabledModules.every(x => typeof x === 'string'))) {
       throw new BadRequestException('disabledModules must be a list of module ids.');
     }
     if (body?.refresh !== undefined && body.refresh !== 'normal' && body.refresh !== 'relaxed') throw new BadRequestException('refresh must be "normal" or "relaxed".');
-    return this.workbench.updatePreferences(body as { disabledModules?: string[]; refresh?: 'normal' | 'relaxed' });
+    if (body?.language !== undefined && !['system', 'en', 'th'].includes(body.language as string)) throw new BadRequestException('language must be "system", "en" or "th".');
+    return this.workbench.updatePreferences(body as { disabledModules?: string[]; refresh?: 'normal' | 'relaxed'; language?: 'system' | 'en' | 'th' });
   }
 
   /** SSE for any topics, e.g. ?topics=system.*,devnex.service.* */

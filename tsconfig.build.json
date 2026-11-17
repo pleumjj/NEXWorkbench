@@ -5,6 +5,9 @@
       "path": "packages/shared"
     },
     {
+      "path": "packages/i18n"
+    },
+    {
       "path": "packages/config"
     },
     {

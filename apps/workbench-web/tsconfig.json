@@ -22,7 +22,8 @@
         "name": "next"
       }
     ],
-    "noUnusedLocals": false
+    "noUnusedLocals": false,
+    "jsxImportSource": "@nex/i18n"
   },
   "include": [
     "next-env.d.ts",

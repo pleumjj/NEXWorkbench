@@ -11,7 +11,7 @@ export type WorkbenchSummary = {
   attention: AttentionItem[];
   continueWorking: ContinueWorkingItem[];
   activity: ActivityEvent[];
-  preferences: { disabledModules: string[]; refresh: 'normal' | 'relaxed' };
+  preferences: { disabledModules: string[]; refresh: 'normal' | 'relaxed'; language: 'system' | 'en' | 'th' };
   platform: string;
   version: string;
   updatedAt: string;
@@ -32,6 +32,8 @@ export type WorkbenchContext = {
   /** A module publishes the badges of its own sections (e.g. memnex: { cleanup: 3 }). */
   setBadges: (moduleId: string, badges: Badges) => void;
   isEnabled: (moduleId: string) => boolean;
+  /** The active UI language (after resolving "Follow system"). */
+  language: 'en' | 'th';
 };
 
 export const Ctx = createContext<WorkbenchContext | null>(null);

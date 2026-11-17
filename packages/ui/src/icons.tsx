@@ -1,3 +1,4 @@
+/** @jsxImportSource @nex/i18n */
 /** Line icons, 1.75 stroke on a 24 grid (extracted from MemNEX; new ones follow the same rules). */
 export const iconPaths = {
   overview: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',

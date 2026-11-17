@@ -1,4 +1,5 @@
 'use client';
+/** @jsxImportSource @nex/i18n */
 import { useState, type ReactNode } from 'react';
 import { Icon } from './icons';
 import { fmtBytes } from './format';

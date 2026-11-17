@@ -15,6 +15,7 @@ import { buildRepositories, buildWorktrees, devSummary, filterRepos, sortRepos, 
 import { analyzeLocation, measureFolder, relPath } from './walker';
 import { buildCandidates, cleanupPreview, cleanupReportMarkdown, largeFileRisk, recoverySummary } from './cleanup';
 import { dockerStorage } from './docker';
+import { buildCleanupPlan, planMarkdown } from './plan';
 import { sharedCacheLocations } from './shared';
 import { DEFAULT_STORAGE_SETTINGS, normalizeStorageSettings } from './settings';
 
@@ -520,6 +521,15 @@ export class StorageEngine {
     return cleanupPreview(await this.candidates(), ids as string[]);
   }
 
+  /** Suggested, explained cleanup plan (deterministic). */
+  async cleanupPlan() {
+    const { volume, health } = await this.health();
+    return buildCleanupPlan({
+      candidates: await this.candidates(), worktrees: await this.worktrees(), locations: this.opts.allowlist().locations, now: this.now(),
+      disk: volume && health ? { freeBytes: volume.freeBytes, totalBytes: volume.totalBytes, status: health.status } : null,
+    });
+  }
+
   /** Markdown report for an assistant to continue the cleanup with the user (selection, or a risk / project filter). */
   async cleanupReport(opts: { ids?: string[]; risk?: string | null; project?: string | null } = {}) {
     let cands = await this.candidates();
@@ -528,7 +538,8 @@ export class StorageEngine {
     if (opts.risk) { cands = cands.filter(c => c.risk === opts.risk); scope.push(`risk ${opts.risk}`); }
     if (opts.project) { cands = cands.filter(c => c.projectId === opts.project); scope.push(`project ${cands[0]?.projectName ?? opts.project}`); }
     const { volume, health } = await this.health();
-    return cleanupReportMarkdown(cands, {
+    const plan = !opts.ids?.length && !opts.risk && !opts.project ? planMarkdown(await this.cleanupPlan()) : null;
+    return cleanupReportMarkdown(cands, { plan,
       now: this.now(), scope: scope.join(', ') || 'all cleanup candidates',
       disk: volume && health ? { label: volume.label, freeBytes: volume.freeBytes, totalBytes: volume.totalBytes, status: health.status } : null,
     });

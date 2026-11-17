@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import type { CleanupCandidate, CleanupRisk, DiskVolume, DockerStorage, DuplicateGroup, RepositoryStorage, StorageEntry, StorageForecast, StorageHealth, StorageSettings } from '@nex/filenex';
+import type { CleanupCandidate, CleanupPlan, CleanupRisk, DiskVolume, DockerStorage, DuplicateGroup, RepositoryStorage, StorageEntry, StorageForecast, StorageHealth, StorageSettings } from '@nex/filenex';
 import { EmptyState, FilterChips, Icon, Meter, Modal, Pill, SearchField, Segmented, Setting, Stat, createPost, since, useNow } from '@nex/ui';
+import { localeTag } from '@nex/i18n';
 
 /* ───────────────────────── API & helpers ───────────────────────── */
 const API = '/api/filenex/storage';
@@ -31,7 +32,7 @@ export const fb = (n: number | null | undefined) => {
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${fb(Math.abs(n))}`;
 const nf = (n: number) => n.toLocaleString('en-US');
 const pct = (a: number, b: number) => (b ? (a / b) * 100 : 0);
-const daysAgo = (iso: string | null, now: number) => { if (!iso) return '—'; const d = Math.floor((now - Date.parse(iso)) / 86_400_000); return d < 1 ? 'Today' : d < 2 ? 'Yesterday' : d < 60 ? `${d} days ago` : new Date(iso).toLocaleDateString(); };
+const daysAgo = (iso: string | null, now: number) => { if (!iso) return '—'; const d = Math.floor((now - Date.parse(iso)) / 86_400_000); return d < 1 ? 'Today' : d < 2 ? 'Yesterday' : d < 60 ? `${d} days ago` : new Date(iso).toLocaleDateString(localeTag()); };
 const shortPath = (p: string) => p.replace(/^\/Users\/[^/]+/, '~').replace(/^[A-Z]:\\Users\\[^\\]+/i, '~');
 /** Keep the start and the end of a long path readable: "~/Documents/TOPO/…/agent-a00dc7b2…/frontend/node_modules". */
 const midPath = (p: string, max = 70) => {
@@ -214,7 +215,7 @@ function StorageOverview({ rev }: { rev: number }) {
             {dist.items.map(i => (
               <Fragment key={i.key}>
                 <Bar label={i.label} sub={<>{i.note}{i.estimate && <> · <span className="pill pill-muted st-mini">Estimate</span></>}</>} bytes={i.bytes} max={maxItem} />
-                {i.folders.filter(f => f.bytes >= i.bytes * 0.05).map(f => <div className="st-sub" key={f.key}><span>{f.label}</span><span className="num">{fb(f.bytes)}</span></div>)}
+                {i.folders.filter(f => f.bytes >= i.bytes * 0.05).map(f => <div className="st-sub" key={f.key}><span translate="no">{f.label}</span><span className="num">{fb(f.bytes)}</span></div>)}
               </Fragment>
             ))}
             <Bar label="Not analyzed" sub="Apps, system, and folders outside FileNEX — not attributed" bytes={dist.notAnalyzedBytes} max={maxItem} tone="muted" />
@@ -272,7 +273,7 @@ function LargeFiles({ rev, setToast }: { rev: number; setToast: (t: Toasty) => v
           <div className="tr th cols-large" role="row"><span>File</span><span className="r">Size</span><span>Modified</span><span>Classification</span><span /></div>
           {res.files.map(f => (
             <div className="tr cols-large row-wrap" role="row" key={f.path}>
-              <span className="cell-app"><span className="app-icon"><Icon name="file" size={16} /></span><span><b title={f.name}>{f.name}</b><small title={f.path}>{shortPath(f.path)}</small></span></span>
+              <span className="cell-app"><span className="app-icon"><Icon name="file" size={16} /></span><span><b title={f.name} translate="no">{f.name}</b><small title={f.path}>{shortPath(f.path)}</small></span></span>
               <span className="num r"><b>{fb(f.bytes)}</b></span>
               <span className="fine" style={{ margin: 0 }}>{daysAgo(f.modifiedAt, now)}</span>
               <span title={f.reason}><RiskPill risk={f.risk} /></span>
@@ -342,7 +343,7 @@ function Developer({ rev, setToast }: { rev: number; setToast: (t: Toasty) => vo
           <div className="tr th cols-repos" role="row"><span>Repository</span><span className="r">Total</span><span className="r">Source</span><span className="r">Dependencies</span><span className="r">Build / Cache</span><span className="r">Docker</span><span className="r">Other</span><span>Last active</span></div>
           {avail.map((r, i) => (
             <div className="tr cols-repos row-wrap st-link" role="row" key={r.projectId} onClick={() => router.push(`/filenex/storage/developer/${encodeURIComponent(r.projectId)}`)}>
-              <span className="cell-app"><span className="st-rank">{i + 1}</span><span><Link href={`/filenex/storage/developer/${encodeURIComponent(r.projectId)}`} onClick={e => e.stopPropagation()}><b>{r.name}</b></Link><small>{r.nested ? 'Inside another project · ' : ''}{r.worktrees.length ? `${r.worktrees.length} worktree${r.worktrees.length > 1 ? 's' : ''} · ` : ''}{shortPath(r.path)}</small></span></span>
+              <span className="cell-app"><span className="st-rank">{i + 1}</span><span><Link href={`/filenex/storage/developer/${encodeURIComponent(r.projectId)}`} onClick={e => e.stopPropagation()}><b translate="no">{r.name}</b></Link><small>{r.nested ? 'Inside another project · ' : ''}{r.worktrees.length ? `${r.worktrees.length} worktree${r.worktrees.length > 1 ? 's' : ''} · ` : ''}{shortPath(r.path)}</small></span></span>
               <span className="num r"><b>{fb(r.totalBytes)}</b></span>
               <span className="num r">{fb(r.sourceBytes)}</span>
               <span className="num r">{fb(r.dependencyBytes)}</span>
@@ -362,7 +363,7 @@ function Developer({ rev, setToast }: { rev: number; setToast: (t: Toasty) => vo
           <div className="table">
             {unavail.map(r => (
               <div className="fx-row" key={r.projectId}>
-                <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name="lock" size={15} /></span><span style={{ minWidth: 0 }}><b>{r.name}</b><small>{UNAVAILABLE[r.unavailableReason ?? 'not-approved']} · {shortPath(r.path)}</small></span></span>
+                <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name="lock" size={15} /></span><span style={{ minWidth: 0 }}><b translate="no">{r.name}</b><small>{UNAVAILABLE[r.unavailableReason ?? 'not-approved']} · {shortPath(r.path)}</small></span></span>
                 <span />
                 {(r.unavailableReason === 'not-approved' || r.unavailableReason === 'partial') ? <Link className="btn btn-line btn-sm" href={`/filenex/settings?add=1&path=${encodeURIComponent(r.path)}`}>Allow folder</Link> : <span />}
               </div>
@@ -429,7 +430,7 @@ function RepoDetailPage({ id, rev, setToast }: { id: string; rev: number; setToa
   const r = d.repo;
   if (!r.available) return (
     <>
-      <div className="project-head"><div><p className="eyebrow">Repository</p><h2 className="context-title">{r.name}</h2><p className="path">{r.path}</p></div></div>
+      <div className="project-head"><div><p className="eyebrow">Repository</p><h2 className="context-title" translate="no">{r.name}</h2><p className="path">{r.path}</p></div></div>
       <div className="table"><EmptyState title="Storage analysis unavailable">{UNAVAILABLE[r.unavailableReason ?? 'not-approved']} {r.unavailableReason === 'not-approved' && 'DevNEX knows where the repository is; FileNEX still needs your permission to analyze it.'}</EmptyState>
         {(r.unavailableReason === 'not-approved' || r.unavailableReason === 'partial') && <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 24 }}><Link className="btn btn-ink" href={`/filenex/settings?add=1&path=${encodeURIComponent(r.path)}`}><Icon name="plus" size={14} />Allow folder</Link></div>}
       </div>
@@ -448,7 +449,7 @@ function RepoDetailPage({ id, rev, setToast }: { id: string; rev: number; setToa
             {r.recentlyUsed && <Pill tone="system">Recently used today</Pill>}
             {r.nested && <Pill tone="system">Inside another project</Pill>}
           </div>
-          <h2 className="context-title" style={{ marginTop: 10 }}>{r.name}</h2>
+          <h2 className="context-title" style={{ marginTop: 10 }} translate="no">{r.name}</h2>
           <p className="big-num" style={{ marginTop: 8 }}>{fb(r.totalBytes).split(' ')[0]}<span> {fb(r.totalBytes).split(' ')[1]}</span></p>
           <p className="path" title={r.path}>{r.path}</p>
         </div>
@@ -466,7 +467,7 @@ function RepoDetailPage({ id, rev, setToast }: { id: string; rev: number; setToa
           <dl className="kv">
             <dt>Status</dt><dd>{r.runningServiceCount ? `Active · ${r.runningServiceCount} service${r.runningServiceCount > 1 ? 's' : ''} running` : r.isActiveProject ? 'Active project' : 'Not active'}</dd>
             <dt>Last activity</dt><dd>{daysAgo(r.lastActiveAt, now)}{r.lastActiveSource ? ` · ${r.lastActiveSource === 'worknex' ? 'WorkNEX' : 'file changes'}` : ''}</dd>
-            {d.git?.isRepo && <><dt>Git branch</dt><dd>{d.git.branch ?? '—'}</dd><dt>Git</dt><dd>{d.gitClean ? 'Clean' : `${d.git.changed} changed · ${d.git.untracked} untracked`}</dd></>}
+            {d.git?.isRepo && <><dt>Git branch</dt><dd translate="no">{d.git.branch ?? '—'}</dd><dt>Git</dt><dd>{d.gitClean ? 'Clean' : `${d.git.changed} changed · ${d.git.untracked} untracked`}</dd></>}
             <dt>Services</dt><dd>{r.runningServiceCount} running</dd>
             <dt>Analyzed</dt><dd>{since(r.analyzedAt, now)}</dd>
           </dl>
@@ -496,7 +497,7 @@ function RepoDetailPage({ id, rev, setToast }: { id: string; rev: number; setToa
           <div className="tr th cols-worktrees" role="row"><span>Branch</span><span className="r">Size</span><span className="r">Dependencies</span><span>Last commit</span><span>Status</span></div>
           {r.worktrees.map(w => (
             <div className="tr cols-worktrees row-wrap" role="row" key={w.path}>
-              <span className="cell-app"><span style={{ minWidth: 0 }}><b title={w.name}>{w.name}</b><small className="mono st-path" title={w.path}>{midPath(w.path)}</small></span></span>
+              <span className="cell-app"><span style={{ minWidth: 0 }}><b title={w.name} translate="no">{w.name}</b><small className="mono st-path" title={w.path}>{midPath(w.path)}</small></span></span>
               <span className="num r"><b>{fb(w.totalBytes)}</b></span>
               <span className="num r">{fb(w.dependencyBytes)}</span>
               <span className="fine" style={{ margin: 0, whiteSpace: 'normal' }}>{w.lastCommitAt ? `${daysAgo(w.lastCommitAt, now)} · ${w.lastCommitSubject ?? ''}` : '—'}</span>
@@ -517,7 +518,7 @@ function EntryTable({ entries, now }: { entries: StorageEntry[]; now: number }) 
       <div className="tr th cols-entries" role="row"><span>Folder</span><span className="r">Size</span><span>Classification</span><span>Regeneratable</span><span>Why</span></div>
       {entries.map(e => (
         <div className="tr cols-entries row-wrap" role="row" key={e.id}>
-          <span className="cell-app"><span style={{ minWidth: 0 }}><b title={e.label ?? e.name}>{e.label ?? e.name}</b>{e.detail && e.detail !== e.projectName && <small className="st-detail">{e.detail}</small>}<small className="mono st-path" title={e.path}>{midPath(e.path)}{e.lastUsedAt && e.container ? ` · changed ${daysAgo(e.lastUsedAt, now).toLowerCase()}` : ''}</small></span></span>
+          <span className="cell-app"><span style={{ minWidth: 0 }}><b title={e.label ?? e.name} translate="no">{e.label ?? e.name}</b>{e.detail && e.detail !== e.projectName && <small className="st-detail">{e.detail}</small>}<small className="mono st-path" title={e.path}>{midPath(e.path)}{e.lastUsedAt && e.container ? ` · changed ${daysAgo(e.lastUsedAt, now).toLowerCase()}` : ''}</small></span></span>
           <span className="num r"><b>{fb(e.bytes)}</b></span>
           <span><RiskPill risk={e.risk} /></span>
           <span className="fine" style={{ margin: 0 }}>{e.regeneratable ? 'Regeneratable' : '—'}</span>
@@ -567,7 +568,7 @@ function GrowthPage({ rev }: { rev: number }) {
           <p className="eyebrow">What grew? · last {days} days</p>
           {gr ? <>
             <p className="big-num">{signed(gr.usedDeltaBytes)}</p>
-            <p className="fine">Change in used space since {new Date(gr.from).toLocaleDateString()}.</p>
+            <p className="fine">Change in used space since {new Date(gr.from).toLocaleDateString(localeTag())}.</p>
             {top.map(b => <Bar key={b.key} label={b.label} sub={b.kind === 'docker' ? 'Docker' : b.kind === 'shared' ? 'Shared cache' : 'Approved folder'} bytes={Math.abs(b.deltaBytes)} max={maxB} right={signed(b.deltaBytes)} tone={b.deltaBytes > 0 ? 'moderate' : 'healthy'} />)}
             {folders.filter(b => b.deltaBytes > 100 * MB).slice(0, 6).map(b => <div className="st-sub" key={b.key}><span>{b.kind === 'repo' ? 'Repository · ' : ''}{b.label}</span><span className="num">{signed(b.deltaBytes)}</span></div>)}
             <Bar label="Other" sub="Outside analyzed folders (apps, system, caches) — not attributed" bytes={Math.abs(gr.otherDeltaBytes)} max={maxB} right={signed(gr.otherDeltaBytes)} tone="muted" />
@@ -599,7 +600,7 @@ function GrowthPage({ rev }: { rev: number }) {
               <div className="tr th cols-growth" role="row"><span>Repository</span><span className="r">{days} days ago</span><span className="r">Now</span><span className="r">Change</span><span>Largest contributors</span></div>
               {g.repos.map(r => (
                 <div className="tr cols-growth row-wrap" role="row" key={r.projectId}>
-                  <span><Link href={`/filenex/storage/developer/${encodeURIComponent(r.projectId)}`}><b>{r.name}</b></Link></span>
+                  <span><Link href={`/filenex/storage/developer/${encodeURIComponent(r.projectId)}`}><b translate="no">{r.name}</b></Link></span>
                   <span className="num r">{fb(r.fromBytes)}</span><span className="num r">{fb(r.toBytes)}</span><span className="num r"><b>{signed(r.deltaBytes)}</b></span>
                   <span className="fine" style={{ margin: 0 }}>{r.parts.filter(p => p.deltaBytes > 0).slice(0, 3).map(p => `${p.label} ${signed(p.deltaBytes)}`).join(' · ') || '—'}</span>
                 </div>
@@ -627,7 +628,8 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
   const [risk, setRisk] = useState<'All' | 'Safe to review' | 'Review carefully'>('All');
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<Preview | null>(null);
-  useEffect(() => { get<CleanupCandidate[]>('/cleanup-candidates').then(setCands).catch(() => setCands([])); }, [rev]);
+  const [plan, setPlan] = useState<CleanupPlan | null>(null);
+  useEffect(() => { get<CleanupCandidate[]>('/cleanup-candidates').then(setCands).catch(() => setCands([])); get<CleanupPlan>('/cleanup-plan').then(setPlan).catch(() => setPlan(null)); }, [rev]);
   const list = useMemo(() => (cands ?? []).filter(c => (!project || c.projectId === project) && (risk === 'All' || RISK[c.risk].label === risk)), [cands, risk, project]);
   const groups = useMemo(() => {
     const m = new Map<string, CleanupCandidate[]>();
@@ -654,6 +656,7 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
         {project && <span className="chip on">{projectName ?? 'Project'} <Link href="/filenex/storage/cleanup" aria-label="Show all projects" style={{ color: 'inherit', marginLeft: 6 }}><Icon name="close" size={12} /></Link></span>}
         {!!list.length && <a className="btn btn-line btn-sm" style={{ marginLeft: 'auto' }} href={reportHref(false)} download="filenex-cleanup-report.md" title="Markdown report with exact paths and safety rules, to continue the cleanup with Claude"><Icon name="external" size={12} />Export for Claude</a>}
       </div>
+      {plan && !project && <SuggestedPlan plan={plan} onSelect={ids => { setPicked(new Set(ids)); setRisk('All'); setToast({ tone: 'ok', text: `${ids.length} items selected — review them below, then Preview cleanup.` }); }} />}
       <p className="fine section-note">Analyze first. Delete deliberately. These are review opportunities — FileNEX never deletes anything. Select items to preview exactly what they cover, then remove what you no longer need yourself. Source code, Git history, documents, photos, videos, .env files and databases are protected and never listed.</p>
       {groups.length ? groups.map(([group, items]) => (
         <Fragment key={group}>
@@ -663,7 +666,7 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
             {items.map(c => (
               <div className={`tr cols-clean row-wrap ${picked.has(c.id) ? 'st-picked' : ''}`} role="row" key={c.id}>
                 <span><input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} aria-label={`Select ${c.name}`} /></span>
-                <span className="cell-app" style={{ minWidth: 0 }}><span style={{ minWidth: 0 }}><b title={c.label ?? c.name}>{c.label ?? c.name}</b>{c.detail && <small className="st-detail" title={c.detail}>{c.detail}</small>}<small className="mono st-path" title={c.path}>{c.path.startsWith('docker:') ? 'Docker' : midPath(c.path, 48)}</small><small className="st-reason">{c.reason}{c.recoverable ? '' : ' · not counted as recoverable'}</small></span></span>
+                <span className="cell-app" style={{ minWidth: 0 }}><span style={{ minWidth: 0 }}><b title={c.label ?? c.name} translate="no">{c.label ?? c.name}</b>{c.detail && <small className="st-detail" title={c.detail}>{c.detail}</small>}<small className="mono st-path" title={c.path}>{c.path.startsWith('docker:') ? 'Docker' : midPath(c.path, 48)}</small><small className="st-reason">{c.reason}{c.recoverable ? '' : ' · not counted as recoverable'}</small></span></span>
                 <span className="num r"><b>{fb(c.bytes)}</b></span>
                 <span><RiskPill risk={c.risk} /></span>
                 <span className="fine" style={{ margin: 0 }}>{c.regeneratable ? 'Regeneratable' : 'No'}</span>
@@ -805,5 +808,40 @@ export function StorageSettingsSection({ setToast }: { setToast: (t: Toasty) => 
         </Modal>
       )}
     </>
+  );
+}
+
+/** Suggested, explained plan: steps in order of gain vs. risk (deterministic rules — suggestions only). */
+function SuggestedPlan({ plan, onSelect }: { plan: CleanupPlan; onSelect: (ids: string[]) => void }) {
+  const [open, setOpen] = useState(true);
+  const [more, setMore] = useState<Set<string>>(new Set());
+  return (
+    <article className="tile st-plan" style={{ marginBottom: 16 }}>
+      <div className="tile-head" style={{ marginBottom: open ? 8 : 0 }}>
+        <div><p className="eyebrow" style={{ margin: 0 }}>Suggested plan</p><p className="st-plan-head">{plan.headline}</p></div>
+        <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => !o)} aria-expanded={open}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      {open && (plan.steps.length ? <ol className="st-steps">
+        {plan.steps.map(st => {
+          const all = more.has(st.key);
+          return (
+            <li key={st.key}>
+              <div className="st-step-head">
+                <div><b>{st.title}</b> <span className="num">~{fb(st.bytes)}</span><p className="fine" style={{ margin: '2px 0 0' }}>{st.why}</p></div>
+                {!!st.ids.length && <button className="btn btn-line btn-sm" onClick={() => onSelect(st.ids)}>Select these ({st.ids.length})</button>}
+              </div>
+              <ul className="st-step-items">
+                {(all ? st.items : st.items.slice(0, 6)).map(it => <li key={`${it.label}:${it.path}`}><span><span className="mono" title={it.path || undefined}>{it.label}</span>{it.note && <small> — {it.note}</small>}</span><span className="num">{it.bytes ? fb(it.bytes) : ''}</span></li>)}
+                {st.more > 0 && <li className="fine">…and {st.more} more{st.ids.length ? ' (included in “Select these”)' : ''}</li>}
+                {!all && st.items.length > 6 && <li><button className="chip-action" onClick={() => setMore(m => new Set(m).add(st.key))}>Show all</button></li>}
+              </ul>
+              {st.notes.map(n => <p className="fine st-step-note" key={n}><Icon name="alert" size={12} /> {n}</p>)}
+              {!!st.keep.length && <p className="fine st-step-note"><Icon name="lock" size={12} /><span>Leave out: {st.keep.map((k, i) => <Fragment key={k.label}>{i > 0 && '; '}<span translate="no">{k.label}</span> (<span>{k.reason}</span>)</Fragment>)}.</span></p>}
+            </li>
+          );
+        })}
+      </ol> : <p className="fine">Nothing worth cleaning up right now.</p>)}
+      {open && <p className="fine" style={{ marginBottom: 0 }}>Suggestions from fixed rules (size, risk, last change, running services, Git state) — not AI. Selecting items deletes nothing; Preview shows exactly what they cover.</p>}
+    </article>
   );
 }

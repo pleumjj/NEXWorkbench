@@ -245,3 +245,24 @@ export interface ProjectActivity {
   composeProjects: string[];
 }
 export interface GitContext { isRepo: boolean; branch: string | null; changed: number; untracked: number }
+
+/** One line of a suggested step: a readable name (relative to its approved folder), size and a short note. */
+export interface PlanItem { id: string | null; label: string; path: string; bytes: number; note?: string }
+export interface PlanStep {
+  key: 'build' | 'idle-deps' | 'check-first' | 'your-call';
+  title: string;
+  /** Approximate bytes covered by the step's items (each byte once). */
+  bytes: number;
+  why: string;
+  items: PlanItem[];
+  /** Items not shown in `items`. */
+  more: number;
+  /** Things deliberately left out of this step, with the reason. */
+  keep: { label: string; reason: string }[];
+  /** Notes (e.g. "aim-dms-ui is installed in 2 places"). */
+  notes: string[];
+  /** Candidate ids this step covers (to select them in Cleanup Review). Empty for "ask first" steps. */
+  ids: string[];
+}
+/** A deterministic, explainable cleanup plan — suggestions in order of gain vs. risk. Nothing is ever deleted. */
+export interface CleanupPlan { generatedAt: string; headline: string; urgency: 'none' | 'soon' | 'now'; steps: PlanStep[] }

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { DuplicateGroup, FileRecord, FileType, FilenexSettings, LocationStatus, RelatedFile, SearchHit, VersionGroup } from '@nex/filenex';
 import { EmptyState, FilterChips, Icon, Modal, Pill, Segmented, Setting, Stat, Toast, Wordmark as UiWordmark, createPost, fmtBytes, since, useNow, useToast, type IconName } from '@nex/ui';
+import { localeTag } from '@nex/i18n';
 import { useWorkbench } from '../../shell/context';
 import { PageHeader } from '../../shell/PageHeader';
 import { StoragePage, StorageSettingsSection, storageTabLabel } from './StorageApp';
@@ -41,7 +42,7 @@ const DATE_FILTERS = ['Any time', 'Today', 'Yesterday', 'Last 7 days', 'Last 30 
 const nf = (n: number) => n.toLocaleString('en-US');
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const shortPath = (p: string, home = '') => (home && p.startsWith(home) ? `~${p.slice(home.length)}` : p);
-const when = (iso: string, now: number) => { const d = new Date(iso); const days = Math.floor((now - d.getTime()) / 86_400_000); return days < 1 ? `Today ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : days < 2 ? 'Yesterday' : days < 30 ? `${days} days ago` : d.toLocaleDateString(); };
+const when = (iso: string, now: number) => { const d = new Date(iso); const days = Math.floor((now - d.getTime()) / 86_400_000); return days < 1 ? `Today ${d.toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' })}` : days < 2 ? 'Yesterday' : days < 30 ? `${days} days ago` : d.toLocaleDateString(localeTag()); };
 
 /* ───────────────────────── App ───────────────────────── */
 export function FilenexApp() {
@@ -141,7 +142,7 @@ function FileRow({ f, now, extra, right }: { f: FileRecord; now: number; extra?:
       <Link href={`/filenex/files/${f.id}`} className="fx-main">
         <span className="app-icon"><Icon name={TYPE_ICON[f.fileType]} size={16} /></span>
         <span style={{ minWidth: 0 }}>
-          <b title={f.name}>{f.name}</b>
+          <b title={f.name} translate="no">{f.name}</b>
           <small className="path" title={f.parentPath}>{f.parentPath}</small>
           {extra}
         </span>
@@ -178,7 +179,7 @@ function Overview({ status }: { status: Status }) {
           <div className="tile-head"><div><p className="eyebrow">Recent work</p><h3>From WorkNEX</h3></div><Link className="btn btn-ghost" href="/filenex/collections">Collections <Icon name="arrow" size={16} /></Link></div>
           {!work ? <p className="fine">Loading…</p> : work.length ? (
             <ul className="feed">{work.map(w => (
-              <li key={w.id}><Link href={`/filenex/collections/context:${w.id}`} style={{ color: 'inherit', textDecoration: 'none' }}><b>{w.title}</b>{w.isActive && <> <Pill tone="ok">Active</Pill></>}</Link><span className="fine" style={{ margin: 0 }}>{w.files.length} file{w.files.length === 1 ? '' : 's'}</span></li>
+              <li key={w.id}><Link href={`/filenex/collections/context:${w.id}`} style={{ color: 'inherit', textDecoration: 'none' }}><b translate="no">{w.title}</b>{w.isActive && <> <Pill tone="ok">Active</Pill></>}</Link><span className="fine" style={{ margin: 0 }}>{w.files.length} file{w.files.length === 1 ? '' : 's'}</span></li>
             ))}</ul>
           ) : <EmptyState title="No recent work with indexed files">Work contexts appear here when WorkNEX saw files that are inside your indexed folders.</EmptyState>}
         </article>
@@ -279,7 +280,7 @@ function FileDetail({ id, setToast }: { id: string; setToast: (t: Toasty) => voi
             {d.duplicate && <span className="pill pill-warn">{d.duplicate.kind === 'exact' ? 'Exact duplicate exists' : 'Possible duplicate'}</span>}
             {!d.exists && <span className="pill pill-bad">Missing on disk</span>}
           </div>
-          <h2 className="context-title" style={{ marginTop: 10, wordBreak: 'break-word' }}>{f.name}</h2>
+          <h2 className="context-title" style={{ marginTop: 10, wordBreak: 'break-word' }} translate="no">{f.name}</h2>
           <p className="path" style={{ marginTop: 6 }} title={f.path}>{f.path}</p>
         </div>
         <div className="actions">
@@ -294,8 +295,8 @@ function FileDetail({ id, setToast }: { id: string; setToast: (t: Toasty) => voi
           <dl className="kv">
             <dt>Type</dt><dd>{TYPE_LABEL[f.fileType]}{f.extension ? ` · .${f.extension}` : ''}</dd>
             <dt>Size</dt><dd>{f.sizeBytes ? (f.sizeBytes < 1024 ** 2 ? `${Math.max(1, Math.round(f.sizeBytes / 1024))} KB` : fmtBytes(f.sizeBytes)) : '—'}</dd>
-            <dt>Modified</dt><dd>{new Date(f.modifiedAt).toLocaleString()}</dd>
-            {f.createdAt && <><dt>Created</dt><dd>{new Date(f.createdAt).toLocaleString()}</dd></>}
+            <dt>Modified</dt><dd>{new Date(f.modifiedAt).toLocaleString(localeTag())}</dd>
+            {f.createdAt && <><dt>Created</dt><dd>{new Date(f.createdAt).toLocaleString(localeTag())}</dd></>}
             <dt>Indexed</dt><dd>{since(f.indexedAt, now)}</dd>
           </dl>
         </article>
@@ -328,7 +329,7 @@ function FileDetail({ id, setToast }: { id: string; setToast: (t: Toasty) => voi
           {d.versions ? <>
             <div className="fx-list">{d.versions.files.map(v => (
               <div className="fx-row" key={v.id}>
-                <Link href={`/filenex/files/${v.id}`} className="fx-main"><span style={{ minWidth: 0 }}><b>{v.name}{v.id === f.id ? ' (this file)' : ''}</b><small className="fine" style={{ margin: 0 }}>{when(v.modifiedAt, now)}</small></span></Link>
+                <Link href={`/filenex/files/${v.id}`} className="fx-main"><span style={{ minWidth: 0 }}><b translate="no">{v.name}{v.id === f.id ? ' (this file)' : ''}</b><small className="fine" style={{ margin: 0 }}>{when(v.modifiedAt, now)}</small></span></Link>
                 {v.id === d.versions!.latestId && <span className="pill pill-ok">Likely latest</span>}
               </div>
             ))}</div>
@@ -375,13 +376,13 @@ function CollectionsPage({ setToast }: { setToast: (t: Toasty) => void }) {
     <div className="bento">
       <article className="tile span-6">
         <p className="eyebrow"><Icon name="history" size={13} /> Work contexts (WorkNEX)</p>
-        {c.work.length ? <ul className="feed">{c.work.map(w => <li key={w.id}><Link href={`/filenex/collections/${encodeURIComponent(w.id)}`} style={{ color: 'inherit' }}><b>{w.name}</b></Link><span className="fine" style={{ margin: 0 }}>{w.files} files · {since(w.lastActiveAt, now)}</span></li>)}</ul>
+        {c.work.length ? <ul className="feed">{c.work.map(w => <li key={w.id}><Link href={`/filenex/collections/${encodeURIComponent(w.id)}`} style={{ color: 'inherit' }}><b translate="no">{w.name}</b></Link><span className="fine" style={{ margin: 0 }}>{w.files} files · {since(w.lastActiveAt, now)}</span></li>)}</ul>
           : <p className="fine">No WorkNEX context has files inside your indexed folders yet.</p>}
       </article>
       <article className="tile span-6">
         <p className="eyebrow"><Icon name="code" size={13} /> Projects (DevNEX)</p>
         {c.projects.length ? <ul className="feed">{c.projects.map(p => (
-          <li key={p.id}>{p.indexed ? <Link href={`/filenex/collections/${encodeURIComponent(p.id)}`} style={{ color: 'inherit' }}><b>{p.name}</b></Link> : <b style={{ color: 'var(--muted)' }}>{p.name}</b>}
+          <li key={p.id}>{p.indexed ? <Link href={`/filenex/collections/${encodeURIComponent(p.id)}`} style={{ color: 'inherit' }}><b translate="no">{p.name}</b></Link> : <b style={{ color: 'var(--muted)' }} translate="no">{p.name}</b>}
             <span className="fine" style={{ margin: 0 }}>{p.indexed ? `${nf(p.files)} files · ${p.recent} recent` : 'Not indexed — folder not added'}</span></li>
         ))}</ul> : <p className="fine">No DevNEX projects.</p>}
         <p className="fine">A DevNEX project is only indexed if its folder is inside a location you added here.</p>
@@ -392,7 +393,7 @@ function CollectionsPage({ setToast }: { setToast: (t: Toasty) => void }) {
           <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Q4 ISO29110" aria-label="Collection name" onKeyDown={e => e.key === 'Enter' && name.trim() && create()} />
           <button className="btn btn-ink" disabled={!name.trim()} onClick={create}><Icon name="plus" size={14} />New collection</button>
         </div>
-        {c.user.length ? <ul className="feed">{c.user.map(u => <li key={u.id}><Link href={`/filenex/collections/${encodeURIComponent(u.id)}`} style={{ color: 'inherit' }}><b>{u.name}</b></Link><span className="fine" style={{ margin: 0 }}>{u.files} file{u.files === 1 ? '' : 's'}</span></li>)}</ul>
+        {c.user.length ? <ul className="feed">{c.user.map(u => <li key={u.id}><Link href={`/filenex/collections/${encodeURIComponent(u.id)}`} style={{ color: 'inherit' }}><b translate="no">{u.name}</b></Link><span className="fine" style={{ margin: 0 }}>{u.files} file{u.files === 1 ? '' : 's'}</span></li>)}</ul>
           : <p className="fine">No collections yet.</p>}
       </article>
     </div>
@@ -412,7 +413,7 @@ function CollectionPage({ id, setToast, onChanged }: { id: string; setToast: (t:
   return (
     <>
       <div className="project-head">
-        <div><p className="eyebrow">{c.kind === 'context' ? 'WorkNEX context' : c.kind === 'project' ? 'DevNEX project' : 'Your collection'}</p><h2 className="context-title">{c.name}</h2>
+        <div><p className="eyebrow">{c.kind === 'context' ? 'WorkNEX context' : c.kind === 'project' ? 'DevNEX project' : 'Your collection'}</p><h2 className="context-title" translate="no">{c.name}</h2>
           <p className="fine">{c.total} file{c.total === 1 ? '' : 's'}{Object.keys(c.byType).length ? ` · ${Object.entries(c.byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${TYPE_LABEL[t as FileType]} ${n}`).join(' · ')}` : ''}</p></div>
         {userId && <div className="actions"><button className="btn btn-line" onClick={async () => { await call('DELETE', `/collections/${userId}`); setToast({ tone: 'ok', text: 'Collection deleted. Files are untouched.' }); onChanged(); router.push('/filenex/collections'); }}>Delete collection</button></div>}
       </div>
@@ -436,7 +437,7 @@ function VersionsPage() {
       <p className="fine section-note">Files that look like versions of each other (final, v2, revB, copy, dates…) in the same place. “Likely latest” is the most recently modified — a hint, not a certainty.</p>
       {groups.length ? groups.slice(0, 100).map(g => (
         <article className="tile" key={g.key} style={{ marginBottom: 12 }}>
-          <div className="tile-head" style={{ marginBottom: 6 }}><div><p className="eyebrow">Possible version group · {g.files.length} files</p><h3 style={{ fontSize: 17 }}>{g.label}</h3></div></div>
+          <div className="tile-head" style={{ marginBottom: 6 }}><div><p className="eyebrow">Possible version group · {g.files.length} files</p><h3 style={{ fontSize: 17 }} translate="no">{g.label}</h3></div></div>
           <div className="fx-list">{g.files.map(f => <FileRow key={f.id} f={f} now={now} right={f.id === g.latestId ? <span className="pill pill-ok">Likely latest</span> : undefined} />)}</div>
           {g.reasons.length > 2 && <p className="fine">{g.reasons.slice(2).join(' ')}</p>}
         </article>
@@ -504,7 +505,7 @@ function SettingsPage({ status, setToast, onChanged, openAdd, addPath, clearAddP
         {!status.locations.length ? <EmptyState title="FileNEX is not indexing any folders.">Choose only the locations you want FileNEX to use for file intelligence.</EmptyState> : status.locations.map(l => (
           <div className="tracked-row" key={l.id}>
             <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name="folder" size={16} /></span>
-              <span style={{ minWidth: 0 }}><b>{l.label}</b><small className="mono" title={l.path}>{l.path}</small></span></span>
+              <span style={{ minWidth: 0 }}><b translate="no">{l.label}</b><small className="mono" title={l.path}>{l.path}</small></span></span>
             <span><Pill tone={l.state === 'scanning' ? 'warn' : l.state === 'unavailable' || l.state === 'error' ? 'bad' : l.state === 'paused' ? 'muted' : 'ok'}>{l.state === 'scanning' ? 'Scanning' : l.state === 'paused' ? 'Paused' : l.state === 'unavailable' ? 'Unavailable' : l.state === 'error' ? 'Error' : 'Indexed'}</Pill></span>
             <span className="fine" style={{ margin: 0 }}>{l.state === 'scanning' ? `${nf(l.scanned)} files scanned…` : `${nf(l.files)} files`}{l.lastScanAt ? ` · last scan ${since(l.lastScanAt, now)}` : ''}{l.error ? ` · ${l.error}` : ''}</span>
             <span><button className="btn btn-ghost btn-sm" onClick={() => act(() => post(`${API}/locations/${l.id}/scan`, {}), `Scanning ${l.label}…`)} disabled={l.paused || status.paused}>Scan now</button></span>

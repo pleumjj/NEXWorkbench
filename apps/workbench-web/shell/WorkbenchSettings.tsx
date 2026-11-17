@@ -6,7 +6,7 @@ import { useWorkbench } from './context';
 import { PageHeader } from './PageHeader';
 
 type SettingsData = {
-  preferences: { disabledModules: string[]; refresh: 'normal' | 'relaxed' };
+  preferences: { disabledModules: string[]; refresh: 'normal' | 'relaxed'; language: 'system' | 'en' | 'th' };
   modules: { id: string; name: string; description: string; route: string }[];
   version: string; platform: string;
   dataLocations: Record<string, string>;
@@ -40,6 +40,10 @@ export function WorkbenchSettings() {
       <PageHeader crumbs={[{ label: 'Settings' }]} title="Settings" updatedAt={data ? data.startedAt : null} offline={offline} onRefresh={load} />
       {!data ? <EmptyState title={offline ? 'The Workbench service isn’t answering.' : 'Loading settings…'}>{offline && <>Run <code>npm run dev</code> in the NEXWorkbench folder.</>}</EmptyState> : (
         <div className="settings">
+          <Setting title="Language" text="Follow the operating system’s language, or choose English or Thai. Reports exported for Claude and timesheet CSV files stay in English.">
+            <Segmented options={['system', 'en', 'th'] as const} value={data.preferences.language ?? 'system'} label={v => (v === 'system' ? 'Follow system' : v === 'en' ? 'English' : 'ไทย')}
+              onChange={v => save({ language: v }, v === 'th' ? 'ภาษาไทย' : v === 'en' ? 'English' : 'Following the system language.')} />
+          </Setting>
           <Setting title="Appearance" text="One theme for Home, MemNEX and DevNEX. Follow the system or choose a mode.">
             <Segmented options={['system', 'light', 'dark'] as const} value={theme} onChange={setTheme} />
           </Setting>

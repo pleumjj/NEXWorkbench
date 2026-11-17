@@ -156,6 +156,8 @@ Rules are data (`storage-engine/classify.ts`): a runtime is added by adding rows
 
 Candidates: developer build output, caches, dependencies, old logs, old downloads (> 90 days), large old archives/installers/disk images (> 180 days), exact duplicate copies, Docker unused images/build cache (volumes shown, not counted), shared caches. **Potentially recoverable** = the conservative sum (each byte once). Documents, photos, videos, `.env`, databases, source and Git are never candidates.
 
+**Suggested plan** (top of Cleanup Review, and of the exported report; `GET /api/filenex/storage/cleanup-plan`): fixed rules — not AI — turn the candidates into ordered, explained steps: **1 · Build output** (regeneratable, most space, least risk; projects with running services and in-use worktrees are left out, with the reason) · **2 · node_modules of projects not touched for 60+ days** (projects in use listed under *Leave out*; the same project installed in several places is called out) · **3 · Check first** (worktrees by Git state, logs ≥ 50 MB, old archives) · **4 · Your call** (personal downloads, duplicates — with an effort-vs-gain note — small caches, Docker, shared caches). The headline states the disk situation and urgency. Steps 1–2 have *Select these*; steps 3–4 never bulk-select. Names are shown relative to the approved folder (`AppSightNEX-azure/web/.next`).
+
 **There is no delete operation in FileNEX.** *Preview cleanup* lists the exact paths, the total and the projects affected, with the regenerate command where relevant (`npm install`, `next build`…), and offers *Copy paths* and *Reveal*. You remove what you no longer need yourself.
 
 ### Performance

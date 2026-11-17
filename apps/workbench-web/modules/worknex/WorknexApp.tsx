@@ -10,6 +10,7 @@ import {
   EmptyState, FilterChips, Icon, Modal, Pill, SearchField, Segmented, Setting, Stat, Toast, Wordmark as UiWordmark,
   createPost, fmtBytes, since, useNow, useToast,
 } from '@nex/ui';
+import { localeTag } from '@nex/i18n';
 import { useWorkbench } from '../../shell/context';
 import { PageHeader } from '../../shell/PageHeader';
 
@@ -42,7 +43,7 @@ const PAGES: Page[] = ['Overview', 'Timeline', 'Timesheet', 'Contexts', 'Saved',
 const slugOf = (p: Page) => (p === 'Overview' ? '' : p.toLowerCase());
 const TYPE_LABEL: Record<ContextType, string> = { development: 'Development', document: 'Document', meeting: 'Meeting', research: 'Browsing', general: 'App' };
 const TYPE_ICON: Record<ContextType, 'code' | 'logs' | 'activity' | 'search' | 'overview'> = { development: 'code', document: 'logs', meeting: 'activity', research: 'search', general: 'overview' };
-const hhmm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString(localeTag(), { hour: '2-digit', minute: '2-digit' });
 const dur = (ms: number) => { const m = Math.max(1, Math.round(ms / 60_000)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
 const ctxDur = (c: WorkContext, now: number) => c.spans.reduce((n, s, i) => n + ((c.isActive && i === c.spans.length - 1 ? now : new Date(s.end).getTime()) - new Date(s.start).getTime()), 0);
 const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -51,7 +52,7 @@ const dayLabel = (day: string) => {
   if (day === today) return 'Today';
   if (day === localDay(y)) return 'Yesterday';
   const [Y, M, D] = day.split('-').map(Number);
-  return new Date(Y, M - 1, D).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  return new Date(Y, M - 1, D).toLocaleDateString(localeTag(), { weekday: 'short', day: 'numeric', month: 'short' });
 };
 const lastActive = (c: WorkContext, now: number) => (c.isActive ? 'Active now' : `Last active ${since(c.lastActiveAt, now)}`);
 
@@ -233,7 +234,7 @@ function Overview({ status, recent, where, now, onResume, onSave, onWhere, onTra
               <span className="live"><i />Live</span>
             </div>
             <div>
-              <h2 className="context-title">{active.title}</h2>
+              <h2 className="context-title" translate="no">{active.title}</h2>
               {active.subtitle && <p className="context-sub">{active.subtitle}</p>}
             </div>
             <dl className="facts">
@@ -297,7 +298,7 @@ function ContextRow({ c, now, onResume }: { c: WorkContext; now: number; onResum
       <Link href={`/worknex/contexts/${c.id}`} style={{ color: 'inherit', textDecoration: 'none', minWidth: 0, display: 'flex', gap: 12, alignItems: 'center' }}>
         <span className="app-icon"><Icon name={TYPE_ICON[c.type]} size={16} /></span>
         <span style={{ minWidth: 0 }}>
-          <b>{c.title}{c.isSaved && <> <Icon name="bookmark" size={12} /></>}</b>
+          <b translate="no">{c.title}{c.isSaved && <> <Icon name="bookmark" size={12} /></>}</b>
           <small>{[TYPE_LABEL[c.type], c.gitBranch, c.files[0]?.name ?? c.subtitle, c.applications.slice(0, 3).map(a => a.name).join(', ')].filter(Boolean).join(' · ')}</small>
         </span>
       </Link>
@@ -337,7 +338,7 @@ function Timeline({ now, every }: { now: number; every: (ms: number) => number }
               <time>{hhmm(e.start)} – {e.end ? hhmm(e.end) : 'Now'}</time>
               <i aria-hidden />
               <div style={{ minWidth: 0 }}>
-                <b>{e.title}</b>
+                <b translate="no">{e.title}</b>
                 <small>{TYPE_LABEL[e.type]} · {dur((e.end ? new Date(e.end).getTime() : now) - new Date(e.start).getTime())}{e.brief.length ? ` · brief switch to ${e.brief.slice(0, 3).join(', ')}` : ''}</small>
               </div>
               <Icon name="chevron" size={14} />
@@ -375,7 +376,7 @@ function TimesheetPage({ every }: { every: (ms: number) => number }) {
   }, [from, to, every]);
   const step = (n: number) => setDay(d => addDays(d, mode === 'day' ? n : n * 7));
   const today = localDay(new Date());
-  const weekStart = (() => { const [y, m, d] = from.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }); })();
+  const weekStart = (() => { const [y, m, d] = from.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(localeTag(), { weekday: 'short', day: 'numeric', month: 'short' }); })();
   const label = mode === 'day' ? dayLabel(day) : `Week of ${weekStart}`;
   return (
     <>
@@ -406,7 +407,7 @@ function TsDayTable({ d }: { d: TsDay | undefined }) {
       <div className="tr th cols-ts" role="row"><span>Work</span><span>Type</span><span className="r">Time</span><span className="r">Hours (0.5)</span></div>
       {d.items.map(i => (
         <div className="tr cols-ts" role="row" key={i.key} style={{ borderTop: '1px solid var(--line)' }}>
-          <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name={TYPE_ICON[i.type]} size={16} /></span><span style={{ minWidth: 0 }}><b>{i.title}</b>{i.projectPath && <small className="path">{i.projectPath}</small>}</span></span>
+          <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name={TYPE_ICON[i.type]} size={16} /></span><span style={{ minWidth: 0 }}><b translate="no">{i.title}</b>{i.projectPath && <small className="path">{i.projectPath}</small>}</span></span>
           <span><Pill tone="muted">{TYPE_LABEL[i.type]}</Pill></span>
           <span className="num r">{hm(i.minutes)}</span>
           <span className="num r"><b>{i.hours.toFixed(1)}</b></span>
@@ -430,7 +431,7 @@ function TsWeekTable({ days }: { days: TsDay[] }) {
   }
   const list = [...rows.entries()].map(([key, r]) => ({ key, ...r, total: Object.values(r.perDay).reduce((n, m) => n + m, 0) })).sort((a, b) => b.total - a.total);
   if (!list.length) return <div className="table"><EmptyState title="No tracked work this week">Only time in apps you track (WorkNEX › Settings) is counted.</EmptyState></div>;
-  const head = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString([], { weekday: 'short', day: 'numeric' }); };
+  const head = (d: string) => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString(localeTag(), { weekday: 'short', day: 'numeric' }); };
   return (
     <div className="table ts-week" role="table" aria-label="Weekly timesheet">
       <div className="tr th cols-week" role="row"><span>Work</span>{days.map(d => <span key={d.day} className="r">{head(d.day)}</span>)}<span className="r">Total</span></div>
@@ -471,7 +472,7 @@ function Contexts({ recent, now }: { recent: WorkContext[]; now: number }) {
           <div className="row-wrap" key={c.id}>
             <Link className="tr cols-contexts" role="row" href={`/worknex/contexts/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
               <span className="cell-app"><span className="app-icon"><Icon name={TYPE_ICON[c.type]} size={16} /></span>
-                <span><b>{c.title}{c.isSaved && <> <Icon name="bookmark" size={12} /></>}</b><small>{c.subtitle ?? c.projectPath ?? c.files[0]?.name ?? ''}</small></span></span>
+                <span><b translate="no">{c.title}{c.isSaved && <> <Icon name="bookmark" size={12} /></>}</b><small>{c.subtitle ?? c.projectPath ?? c.files[0]?.name ?? ''}</small></span></span>
               <span>{c.isActive ? <Pill tone="ok">Active</Pill> : <Pill tone="muted">{TYPE_LABEL[c.type]}</Pill>}</span>
               <span className="fine" style={{ margin: 0 }}>{c.applications.slice(0, 2).map(a => a.name).join(', ')}</span>
               <span className="num">{dur(ctxDur(c, now))}</span>
@@ -512,7 +513,7 @@ function ContextDetail({ id, now, autoResume, onResume, onSave }: { id: string; 
             {c.isSaved && <span className="pill pill-system"><Icon name="bookmark" size={12} />Saved</span>}
             <span className="fine" style={{ margin: 0 }}>{lastActive(c, now)}</span>
           </div>
-          <h2 className="context-title" style={{ marginTop: 10 }}>{c.title}</h2>
+          <h2 className="context-title" style={{ marginTop: 10 }} translate="no">{c.title}</h2>
           {c.subtitle && <p className="context-sub">{c.subtitle}</p>}
         </div>
         <div className="actions">
@@ -555,7 +556,7 @@ function ContextDetail({ id, now, autoResume, onResume, onSave }: { id: string; 
         </article>
         <article className="tile span-4">
           <p className="eyebrow"><Icon name="logs" size={13} /> Files</p>
-          {c.files.length ? <ul className="feed">{c.files.map(f => <li key={f.name}><span title={f.path ?? f.name}>{f.name}</span><time>{since(f.lastSeenAt, now)}</time></li>)}</ul>
+          {c.files.length ? <ul className="feed">{c.files.map(f => <li key={f.name}><span title={f.path ?? f.name} translate="no">{f.name}</span><time>{since(f.lastSeenAt, now)}</time></li>)}</ul>
             : <p className="fine">No file names seen. Files come from window titles (when titles are allowed) or documents the app has open.</p>}
         </article>
         <article className="tile span-4">
@@ -957,7 +958,7 @@ function SaveDialog({ target, onClose, onSaved, setToast }: { target: WorkContex
       <div className="modal-wide">
         <p className="eyebrow">Save work context</p>
         {!ctx ? <><h2 className="h2">Nothing to save yet.</h2><p>WorkNEX needs a few seconds of activity first.</p><div className="modal-actions"><button className="btn btn-ink" onClick={onClose}>OK</button></div></> : <>
-          <h2 className="h2">{ctx.title}</h2>
+          <h2 className="h2" translate="no">{ctx.title}</h2>
           <p>Detected: {[`${ctx.applications.length} application${ctx.applications.length === 1 ? '' : 's'}`, ctx.projectPath && 'a project folder', ctx.files.length && `${ctx.files.length} related file${ctx.files.length === 1 ? '' : 's'}`, ctx.gitBranch && `branch ${ctx.gitBranch}`].filter(Boolean).join(' · ')}</p>
           <label className="field">Label<input value={label} onChange={e => setLabel(e.target.value)} maxLength={120} /></label>
           <label className="field">Note (optional)<textarea value={note} onChange={e => setNote(e.target.value)} maxLength={1000} placeholder="Where you stopped, what’s next…" /></label>

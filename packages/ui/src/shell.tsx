@@ -1,4 +1,5 @@
 'use client';
+/** @jsxImportSource @nex/i18n */
 import type { ReactNode } from 'react';
 import { Icon, type IconName } from './icons';
 import { ago } from './format';

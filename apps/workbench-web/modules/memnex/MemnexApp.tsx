@@ -352,7 +352,7 @@ export function MemnexApp() {
                   <li key={g.name}>
                     <span className="rank-n">{String(i + 1).padStart(2, '0')}</span>
                     <AppIcon {...iconFor(g)} />
-                    <span className="rank-name"><b>{g.name}</b><small>{g.items.length} process{g.items.length > 1 ? 'es' : ''}</small></span>
+                    <span className="rank-name"><b translate="no">{g.name}</b><small>{g.items.length} process{g.items.length > 1 ? 'es' : ''}</small></span>
                     <span className="rank-bar"><i style={{ width: `${(g.memory / (top[0]?.memory || 1)) * 100}%` }} /></span>
                     <strong className="num">{fmt(g.memory)}</strong>
                   </li>
@@ -518,7 +518,7 @@ export function MemnexApp() {
                       <div className="pick on" key={a.id}>
                         <span className="growth-mark" aria-hidden>↗</span>
                         <AppIcon pid={a.mainPid} />
-                        <span><b>{a.name}</b><small>Grew {fmt(a.growth!.bytes)} in {a.growth!.minutes} min · now {fmt(a.memory)}</small></span>
+                        <span><b translate="no">{a.name}</b><small>Grew {fmt(a.growth!.bytes)} in {a.growth!.minutes} min · now {fmt(a.memory)}</small></span>
                         <button className="btn btn-line" onClick={() => setDialog({ kind: 'restart', t: asTarget(a) })}>Restart</button>
                       </div>
                     ))}
@@ -591,7 +591,7 @@ export function MemnexApp() {
             </>}
             {dialog.kind === 'stuck' && <>
               <p className="eyebrow tone-text-high">Application did not close</p>
-              <h2 className="h2">{dialog.t.name} is still running.</h2>
+              <h2 className="h2" translate="no">{dialog.t.name} is still running.</h2>
               <p>{dialog.detail ?? 'It may be waiting for you to save, or it refused a normal quit.'} Check the app first. Force close ends it immediately and <b>unsaved work will be lost</b>.</p>
               <div className="modal-actions">
                 <button className="btn btn-ghost" onClick={() => setDialog(null)} disabled={busy}>Cancel</button>
@@ -619,7 +619,7 @@ export function MemnexApp() {
             {dialog.kind === 'cleanup' && <>
               <p className="eyebrow">Confirm cleanup</p>
               <h2 className="h2">Close {dialog.items.length} application{dialog.items.length > 1 ? 's' : ''}?</h2>
-              <ul className="confirm-list">{dialog.items.map(a => <li key={a.id}><span>{a.name}</span><span className="num">{fmt(a.memory)}</span></li>)}</ul>
+              <ul className="confirm-list">{dialog.items.map(a => <li key={a.id}><span translate="no">{a.name}</span><span className="num">{fmt(a.memory)}</span></li>)}</ul>
               <p>Each app is asked to quit normally. Apps that refuse stay open — MemNEX never force closes during cleanup.</p>
               <div className="modal-actions">
                 <button className="btn btn-ghost" onClick={() => setDialog(null)} disabled={busy}>Cancel</button>
@@ -669,7 +669,7 @@ function AppRow({ g, max, open, cpu, onToggle, onQuit, onKill, onStop, onRestart
         <button className="cell-app" onClick={onToggle} aria-expanded={open}>
           <span className="chev"><Icon name="chevron" size={14} /></span>
           <AppIcon {...iconFor(g)} />
-          <span><b>{g.name}</b><small>{g.items.length} process{g.items.length > 1 ? 'es' : ''}{g.reasons[0] ? ` · ${g.reasons[0]}` : ''}</small>{g.about && <small className="about">{g.about}</small>}</span>
+          <span><b translate="no">{g.name}</b><small>{g.items.length} process{g.items.length > 1 ? 'es' : ''}{g.reasons[0] ? ` · ${g.reasons[0]}` : ''}</small>{g.about && <small className="about">{g.about}</small>}</span>
         </button>
         <span className="pills"><StatusPill status={g.status} recommended={recommended && !isLocked(g)} />{g.growth && <span className="pill pill-growth" title={`Grew ${fmt(g.growth.bytes)} in ${g.growth.minutes} min`}>↗ Growing</span>}</span>
         <span className="num r">{cpu.toFixed(cpu < 10 ? 1 : 0)}%</span>
@@ -717,7 +717,7 @@ function Pick({ a, on, toggle }: { a: AppSummary; on: boolean; toggle: () => voi
     <label className={`pick ${on ? 'on' : ''}`}>
       <input type="checkbox" checked={on} onChange={toggle} />
       <AppIcon pid={a.mainPid} />
-      <span><b>{a.name}</b><small>{a.reasons.join(' · ')}</small></span>
+      <span><b translate="no">{a.name}</b><small>{a.reasons.join(' · ')}</small></span>
       <strong className="num">{fmt(a.memory)}</strong>
     </label>
   );

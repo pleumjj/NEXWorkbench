@@ -2,7 +2,8 @@
   "name": "nex-workbench",
   "private": true,
   "version": "0.3.0",
-  "description": "NEX Workbench \u2014 local-first work intelligence: MemNEX (Local System Intelligence) and DevNEX (Local Developer Control Center) on http://localhost:3900.",
+  "description": "NEX Workbench — local-first work intelligence: MemNEX (Local System Intelligence) and DevNEX (Local Developer Control Center) on http://localhost:3900.",
+  "license": "MIT",
   "workspaces": [
     "packages/*",
     "modules/*",
@@ -12,6 +13,8 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "setup": "node scripts/launch.mjs setup",
+    "app": "node scripts/launch.mjs",
     "dev": "npm run build:core && concurrently -k -n CORE,API,WEB -c gray,cyan,magenta \"npm:watch\" \"npm run dev -w @nex/workbench-api\" \"npm run dev -w @nex/workbench-web\"",
     "build:core": "tsc -b tsconfig.build.json",
     "watch": "tsc -b tsconfig.build.json --watch --preserveWatchOutput",
