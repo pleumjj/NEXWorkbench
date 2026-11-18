@@ -61,6 +61,17 @@ Per project: CPU, RAM, process count, summed over the process trees of its servi
 
 Each issue carries a description, likely cause and recommended action.
 
+## Agents (AI Agent Monitor)
+
+`/devnex/agents` shows which AI coding agents run, what they started and what they left behind. **No AI and no hooks**: only the process list, process start times, the process tree, working folders and listening ports. Prompts, transcripts and files are never read; secrets in command lines are masked.
+
+- **Detection** (`packages/process-core/src/agents.ts`): Claude Code (CLI, VS Code extension, Claude app), Codex, Gemini CLI, Aider, Cursor Agent, OpenCode, Goose, Copilot CLI — by executable, or the script a runtime runs (`node …/claude`, `python …/aider`). The Claude desktop app itself and wrappers are not sessions. An agent started by another agent belongs to its session. MemNEX groups these processes under the agent's name.
+- **Session**: tool, folder → DevNEX project, worktree (`…/worktrees/<name>`), host app (VS Code, Cursor, Terminal, Claude app…), memory and CPU of its whole tree, ports, dev servers. **Working** while the tree uses CPU; **Waiting for you** after 10 quiet minutes; **Ended** when the agent's process is gone (pid *and* start time — a reused pid is a different process).
+- **Lineage** (`modules/devnex/src/agent-engine/`): sampled every 10 s and saved in `.devnex/agents.json`, so a dev server that outlives its agent (re-parented to launchd) is still known as *that session's*. A process started in the background and re-parented at once is matched by folder and start time and labelled **Likely from this agent**. Root folders (`/`) never claim processes.
+- **Findings**: *N processes left by <agent>* (Home attention, warning) · *<project> runs N dev servers* · *<agent> has been waiting for X* (≥ 2 h and ≥ 1 GB; shown on the page only). Ports show which agent started them.
+- **Clean up this session…**: only for an **ended** session; you choose the processes; each is re-checked against a fresh sample (same pid + start time, still a leftover, not NEX itself, not the OS, not protected) and asked to stop normally. Never forced; a running agent is never stopped.
+- **Views**: *Office* — one pod per project, an isometric desk per session (working: typing; waiting: coffee and zZ; ended with leftovers: empty seat, red screen, the ports); *List* — the same as a table. Inline SVG, no WebGL; animations stop with *reduce motion*.
+
 ## Safety
 
 - Commands are read only from the project's files; the API never accepts a command.
@@ -78,11 +89,12 @@ Each issue carries a description, likely cause and recommended action.
 | Ports, conflicts, process→project | `modules/devnex/src/port-engine/` |
 | Env, runtime, git, docker | `modules/devnex/src/{environment,runtime,git,docker}-engine/` |
 | Health rules | `modules/devnex/src/service-health/` |
+| Agent Monitor (sessions, lineage, leftovers) | `modules/devnex/src/agent-engine/` · detection `packages/process-core/src/agents.ts` |
 | Workbench adapter | `modules/devnex/src/module.ts` |
 | HTTP | `apps/workbench-api/src/devnex/` |
-| Screens | `apps/workbench-web/modules/devnex/DevnexApp.tsx` |
+| Screens | `apps/workbench-web/modules/devnex/DevnexApp.tsx` · `AgentsPage.tsx` |
 
 ## API (`/api/devnex/*` via :3900)
 
-`GET overview | projects | projects/:id | ports | environment | registry | services/:id/logs | events`;
-`POST projects` `{path}`, `POST roots` `{path}`, `POST projects/:id/{start|stop*|restart*|open-folder|remove}`, `POST services/:id/{start|stop*|restart*}`, `POST services/:id/logs/clear`, `POST processes/:pid/stop*` — `*` requires `{ "confirmed": true }`.
+`GET overview | projects | projects/:id | ports | environment | registry | agents | services/:id/logs | events`;
+`POST projects` `{path}`, `POST roots` `{path}`, `POST projects/:id/{start|stop*|restart*|open-folder|remove}`, `POST services/:id/{start|stop*|restart*}`, `POST services/:id/logs/clear`, `POST processes/:pid/stop*`, `POST agents/:sessionId/cleanup*` `{pids}` — `*` requires `{ "confirmed": true }`.

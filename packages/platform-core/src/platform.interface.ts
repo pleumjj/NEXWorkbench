@@ -64,6 +64,11 @@ export interface ShellOpen {
   revealPath(path: string): Promise<void>;
 }
 
+/** Move a file or folder to the OS Trash / Recycle Bin (recoverable there). Only after explicit user confirmation. */
+export interface FileTrash {
+  trashPath(path: string): Promise<void>;
+}
+
 /**
  * Window-level metadata for work continuity (WorkNEX). Metadata only: no content, keystrokes, clipboard or screenshots.
  */
@@ -80,7 +85,7 @@ export interface WindowSource {
   openDocuments(pid: number): Promise<string[]>;
 }
 
-export interface PlatformAdapter extends ProcessSource, MemorySource, PortSource, AppControl, ActivitySource, IconSource, ServiceControl, ShellOpen, WindowSource {
+export interface PlatformAdapter extends ProcessSource, MemorySource, PortSource, AppControl, ActivitySource, IconSource, ServiceControl, ShellOpen, FileTrash, WindowSource {
   readonly id: 'darwin' | 'win32';
   /** Activity key matching ForegroundInfo.key: bundle id on macOS, lower-cased exe path on Windows. */
   activityKey(app: { bundleId: string | null; path: string | null }): string | null;

@@ -315,7 +315,7 @@ function FileDetail({ id, setToast }: { id: string; setToast: (t: Toasty) => voi
           {d.duplicate ? <>
             <p className="fine" style={{ marginTop: 0 }}>{d.duplicate.reasons.join(' · ')}</p>
             <ul className="feed">{d.duplicate.files.filter(x => x.id !== f.id).map(x => <li key={x.id}><Link href={`/filenex/files/${x.id}`} style={{ color: 'inherit' }} title={x.path}>{x.name}</Link><span className="fine" style={{ margin: 0 }}>{x.parentPath.split(/[\\/]/).pop()}</span></li>)}</ul>
-            <p className="fine">FileNEX never deletes files. Compare them, then decide in Finder/Explorer.</p>
+            <p className="fine">Nothing here deletes files. Compare them, then decide in Finder/Explorer — or move extra copies to the Trash from Storage › Cleanup Review.</p>
           </> : <p className="fine" style={{ marginTop: 0 }}>No duplicates found.</p>}
         </article>
 
@@ -456,7 +456,7 @@ function DuplicatesPage() {
   return (
     <>
       <div className="toolbar"><FilterChips options={['All', 'Exact', 'Possible'] as const} value={kind} onChange={setKind} counts={{ All: groups.length, Exact: groups.filter(g => g.kind === 'exact').length, Possible: groups.filter(g => g.kind === 'possible').length }} /></div>
-      <p className="fine section-note">Informational only — FileNEX never deletes, moves or renames files. Exact = identical content (hashed only when sizes match). Possible = same name apart from “copy” or numbering.</p>
+      <p className="fine section-note">Informational only — this page never deletes, moves or renames files. Exact = identical content (hashed only when sizes match). Possible = same name apart from “copy” or numbering.</p>
       {list.length ? list.slice(0, 100).map(g => (
         <article className="tile" key={g.key} style={{ marginBottom: 12 }}>
           <div className="tile-head" style={{ marginBottom: 6 }}><div><p className="eyebrow">{g.kind === 'exact' ? 'Exact duplicate' : 'Possible duplicate'} · {g.files.length} files</p><p className="fine" style={{ margin: 0 }}>{g.reasons.join(' · ')}</p></div></div>

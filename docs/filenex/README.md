@@ -72,7 +72,7 @@ Names are normalised by removing `final`, `final2`, `latest`, `new`, `draft`, `c
 
 - **Exact**: same size **and** same SHA-1 (hashing only size-matched candidates).
 - **Possible**: same name apart from “copy”/numbering, plus same size, modification within 2 minutes, or a copy-style name.
-- Actions: compare details, open the file page, reveal in folder. **No deletion.** Duplicates are never Attention items.
+- Actions: compare details, open the file page, reveal in folder. Extra exact copies can be moved to the Trash from Storage › Cleanup Review (after confirmation). Duplicates are never Attention items.
 
 ## WorkNEX & DevNEX integration
 
@@ -104,7 +104,7 @@ Logical views — files are never moved. WorkNEX contexts and DevNEX projects ap
 - **DevNEX knows where the repo is; FileNEX still needs explicit permission to analyze it.** A DevNEX project outside the approved folders shows *Storage analysis unavailable — This repository is not included in FileNEX indexed locations* with an **Allow folder** button (pre-filled in the Add folder dialog). It is never scanned. Tested.
 - Only sizes and dates are read (`lstat`), never contents. Names are recorded only for large files, known developer folders (node_modules, .next…), top-level folders and Downloads items — **never hidden or sensitive names** (`.env*`, credentials, keys…), which still count towards their parent's size.
 - **Shared package caches** (npm `~/.npm/_cacache`, pnpm store, Yarn cache) are outside your folders, so they are measured only if you turn on *Shared developer caches* — total size only.
-- **Docker**: `docker system df` (read-only). Per-project Docker size is an estimate by Compose project name. FileNEX never runs `docker prune`.
+- **Docker**: `docker system df`. Per-project Docker size is an estimate by Compose project name. Docker's own cleanup (`docker builder prune -f`, `docker image prune -a -f`) runs only when you confirm it in Cleanup Review; volumes are never removed.
 
 ### Status (deterministic, configurable)
 
@@ -156,9 +156,24 @@ Rules are data (`storage-engine/classify.ts`): a runtime is added by adding rows
 
 Candidates: developer build output, caches, dependencies, old logs, old downloads (> 90 days), large old archives/installers/disk images (> 180 days), exact duplicate copies, Docker unused images/build cache (volumes shown, not counted), shared caches. **Potentially recoverable** = the conservative sum (each byte once). Documents, photos, videos, `.env`, databases, source and Git are never candidates.
 
-**Suggested plan** (top of Cleanup Review, and of the exported report; `GET /api/filenex/storage/cleanup-plan`): fixed rules — not AI — turn the candidates into ordered, explained steps: **1 · Build output** (regeneratable, most space, least risk; projects with running services and in-use worktrees are left out, with the reason) · **2 · node_modules of projects not touched for 60+ days** (projects in use listed under *Leave out*; the same project installed in several places is called out) · **3 · Check first** (worktrees by Git state, logs ≥ 50 MB, old archives) · **4 · Your call** (personal downloads, duplicates — with an effort-vs-gain note — small caches, Docker, shared caches). The headline states the disk situation and urgency. Steps 1–2 have *Select these*; steps 3–4 never bulk-select. Names are shown relative to the approved folder (`AppSightNEX-azure/web/.next`).
+**Suggested plan** (top of Cleanup Review, and of the exported report; `GET /api/filenex/storage/cleanup-plan`): fixed rules — not AI — turn the candidates into ordered, explained steps: **1 · Build output** (regeneratable, most space, least risk; projects with running services and in-use worktrees are left out, with the reason) · **2 · node_modules of projects not touched for 60+ days** (projects in use listed under *Leave out*; the same project installed in several places is called out) · **3 · Check first** (worktrees by Git state, logs ≥ 50 MB, old archives) · **4 · Your call** (personal downloads, duplicates — with an effort-vs-gain note — small caches, Docker, shared caches). The headline states the disk situation and urgency. Steps 1–2 have *Select these* and *Clean up ~X…*; in step 3 an idle, clean worktree has its own *Remove…*; step 4 never bulk-selects. Step ids contain only items FileNEX can remove. Names are shown relative to the approved folder (`AppSightNEX-azure/web/.next`).
 
-**There is no delete operation in FileNEX.** *Preview cleanup* lists the exact paths, the total and the projects affected, with the regenerate command where relevant (`npm install`, `next build`…), and offers *Copy paths* and *Reveal*. You remove what you no longer need yourself.
+**Confirmed cleanup — nothing is ever removed automatically.** *Clean up…* (selection bar, a row, or a plan step) opens a preview of the exact paths, sizes and **how each item would be removed**:
+
+| Item | How | Why |
+|---|---|---|
+| Build output, caches, dependencies (regeneratable) | **Deleted permanently** | Moving them to the Trash would free no space; re-created by building / reinstalling (the command is shown) |
+| Old logs, old downloads, large old archives, duplicate copies | **Moved to the Trash** | Your files — restorable from the Trash |
+| Clean, idle Git worktree | `git -C <main repo> worktree remove <path>` (never `--force`) | Keeps the branch and its commits; Git refuses on any change |
+| Docker build cache / unused images · npm / pnpm / Yarn caches | The tool's own command (`docker builder prune -f`, `npm cache clean --force`…) | Never `rm` inside a tool's store |
+| Docker volumes, protected items, items in use | **Not removed** — listed under *Not included* with the reason | Volumes can hold databases; active work is left alone |
+
+Rules:
+- **Off by default.** *Allow FileNEX to delete* (FileNEX › Settings › Storage, or *Allow deleting* in the preview) must be on.
+- **Fresh confirmation.** The preview returns a one-time token valid for 5 minutes; anything marked *Review carefully* or more than 20 GB in total needs the typed word `delete`.
+- **Re-checked right before removal.** Each item must still be suggested and removable, inside an active approved folder (never the folder itself, never a project root or a parent of one), not a symbolic link, unchanged since the preview (mtime / size), its project must have no running services, and a worktree must still be clean (Git state read again, uncached). Anything that fails is **skipped with the reason** — never removed on a stale confirmation.
+- **Result**: removed / skipped / failed per item and the **measured** free-space change; items moved to the Trash still use space until you empty it. Kept in a local *Recent cleanups* history (`cleanup-history.json`, last 300). Changed folders are re-analyzed.
+- **One entry point**: `StorageEngine.cleanupConfirm` → `storage-engine/executor.ts` is the only code in FileNEX that removes anything (a test enforces it). There is no *Clean everything* button.
 
 ### Performance
 
@@ -167,13 +182,13 @@ One folder at a time, throttled; known developer folders are measured as one uni
 ### Workbench
 
 - Module card: *Free space* and *Potential recovery*.
-- Attention (only when it matters): **Disk space is low / critically low** → *Review Storage*; at most one **“<repo> grew by X GB this week”** (≥ 3 GB and ≥ 20 %) → *Review Developer Storage*.
+- Attention (only when it matters): **Disk space is low / critically low** → *Review Storage*; **Build output uses X GB** (≥ 10 GB recoverable) → *Review cleanup*; at most one **“<repo> grew by X GB this week”** (≥ 3 GB and ≥ 20 %) → *Review Developer Storage*.
 - ⌘K: *Show storage*, *Show large files*, *Show developer storage*, *Review storage cleanup*, *What grew?*
 
 ### Storage API (`/api/filenex/storage/*`)
 
 `GET status | overview | volumes | large-files?min&sort | growth?days=7|30 | developer?q&sort | developer/:projectId | cleanup-candidates | settings` ·
-`POST cleanup-preview {ids} | open {path} | reveal {path} | scan {force?} | pause | resume` · `PUT settings` · `DELETE history?confirmed=true[&includeAnalyses=true]` (FileNEX history only).
+`GET cleanup-status | cleanup-history` · `POST cleanup-preview {ids} → {…, token} | cleanup-confirm {token, confirm?: "delete"} | open {path} | reveal {path} | scan {force?} | pause | resume` · `PUT settings` · `DELETE history?confirmed=true[&includeAnalyses=true]` (FileNEX history only).
 Open/Reveal accept only paths FileNEX itself reported inside approved folders. Developer search: names or size filters — `node_modules > 5GB`, `build >= 500mb`, `total < 2gb`.
 
 Storage limitations: Trash and folders outside the allowlist are not measured; macOS free space excludes purgeable space; APFS clones may be counted per copy; Docker per-project sizes are estimates; Windows is implemented (statfs per drive, `%LOCALAPPDATA%` caches) but not verified on a real machine.
@@ -201,7 +216,7 @@ Requires Node.js ≥ 22.13 (built-in SQLite without a flag). The “SQLite is ex
 `PUT locations/:id {paused?, label?, excludedFolders?} | settings` ·
 `DELETE collections/:id | collections/:id/items/:fileId | locations/:id?deleteIndex=true|false (choice required) | index?confirmed=true[&includeCollections=true]`
 
-There are deliberately no endpoints that delete, move, rename or write user files.
+The file index endpoints never delete, move, rename or write user files. Storage cleanup removes only items you confirmed (see *Confirmed cleanup* above).
 
 ## Limitations
 

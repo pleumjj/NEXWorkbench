@@ -30,6 +30,7 @@ export const MODULES: ModuleNav[] = [
       { slug: '', label: 'Overview', icon: 'overview' },
       { slug: 'projects', label: 'Projects', icon: 'folder' },
       { slug: 'services', label: 'Services', icon: 'services' },
+      { slug: 'agents', label: 'Agents', icon: 'activity' },
       { slug: 'ports', label: 'Ports', icon: 'ports' },
       { slug: 'logs', label: 'Logs', icon: 'logs' },
       { slug: 'environment', label: 'Environment', icon: 'env' },

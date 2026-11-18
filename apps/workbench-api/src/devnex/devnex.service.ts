@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { dataDir, workspaceRoot } from '@nex/config';
 import { DevnexEngine, createDevnexModule } from '@nex/devnex';
 import { CoreService } from '../core/core.service';
@@ -6,7 +6,7 @@ import { MemnexService } from '../memnex/memnex.service';
 
 /** Wiring only — DevNEX behaviour lives in @nex/devnex. Shares the process inventory with MemNEX. */
 @Injectable()
-export class DevnexService implements OnModuleDestroy {
+export class DevnexService implements OnModuleInit, OnModuleDestroy {
   readonly engine: DevnexEngine;
   readonly module;
 
@@ -24,5 +24,6 @@ export class DevnexService implements OnModuleDestroy {
     });
     this.module = createDevnexModule(this.engine);
   }
+  onModuleInit() { this.engine.agents.start(); }
   async onModuleDestroy() { await this.engine.shutdown(); }
 }

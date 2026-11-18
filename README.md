@@ -45,6 +45,7 @@ Everything runs on your computer. There's no cloud, no account and no telemetry.
 - Finds port conflicts and tells you who owns each port.
 - Checks `.env` files and masks their values.
 - Adds Git, Docker and runtime context, and suggests a fix for each issue.
+- **Agents:** shows which AI agents (Claude Code, Codex, Gemini…) are running, what they started, and what ended sessions left running. It also has an Office view.
 
 </td>
 </tr>
@@ -70,7 +71,7 @@ Everything runs on your computer. There's no cloud, no account and no telemetry.
 - Finds files by project, context, type and date.
 - Shows versions and duplicates.
 - **Storage Intelligence** shows where your disk space went, including dependencies and build output per repo.
-- Its suggested cleanup plan only previews. **It never deletes.**
+- A suggested cleanup plan clears space in a few clicks. **Nothing is deleted until you confirm.**
 
 </td>
 </tr>
@@ -139,7 +140,7 @@ The first run takes a few minutes. Keep the terminal open while you use it, and 
 | 🏠 **Local only** | Both servers listen on `127.0.0.1`. They aren't reachable from your network or the internet. |
 | 📵 **No telemetry** | No analytics. Next.js telemetry is turned off. The fonts are bundled, so the app itself never calls the internet. |
 | ✋ **Nothing automatic** | Nothing is closed or stopped without your confirmation. Force close exists only in MemNEX, and only after you confirm. |
-| 🗑️ **No deleting** | FileNEX never deletes, moves or renames files. Cleanup shows the exact paths and leaves the decision to you. |
+| 🗑️ **You confirm every deletion** | Deleting is off until you allow it, and nothing is ever removed automatically. Cleanup shows the exact paths first. Build output, caches and dependencies are deleted, since they can be re-created. Your files go to the Trash. Every item is checked again right before it's removed. |
 | 📂 **Permission first** | FileNEX only reads folders you add. Registering a project in DevNEX doesn't give FileNEX access to it. |
 | 🔑 **Secrets stay masked** | `.env` values are masked before they leave the API, and they're never stored or logged. |
 | 🛡️ **System is off-limits** | The API refuses to touch operating-system processes, NEX itself and your protected apps. The UI hides them, and the API enforces it too. |
@@ -155,9 +156,9 @@ NEX Workbench คือชุดเครื่องมือสำหรับ
 | โมดูล | ทำอะไร |
 |---|---|
 | 🧠 **MemNEX** | ดู RAM / CPU / swap, บอกว่าเครื่องช้าเพราะอะไร, เคลียร์แบบเห็นตัวอย่างก่อนทุกครั้ง |
-| 🛠️ **DevNEX** | ดูโปรเจกต์ บริการ และพอร์ตที่รันอยู่, หาพอร์ตชนกัน, ตรวจ `.env` |
+| 🛠️ **DevNEX** | ดูโปรเจกต์ บริการ และพอร์ตที่รันอยู่, หาพอร์ตชนกัน, ตรวจ `.env`, ดูเอเจนต์ AI (Claude Code, Codex ฯลฯ) และเก็บกวาดของที่ค้างไว้ |
 | ⏱️ **WorkNEX** | จำว่าทำงานอะไรค้างไว้ แล้วเปิดกลับมาทำต่อได้ (Resume) |
-| 📁 **FileNEX** | ค้นไฟล์ตามงาน, ดูว่าพื้นที่ดิสก์หายไปไหน, แนะนำสิ่งที่ลบได้ (แต่ไม่ลบให้เอง) |
+| 📁 **FileNEX** | ค้นไฟล์ตามงาน, ดูว่าพื้นที่ดิสก์หายไปไหน, แนะนำและเคลียร์พื้นที่ให้ (ลบเฉพาะที่คุณยืนยัน) |
 
 **ติดตั้ง:** ต้องมี [Node.js](https://nodejs.org) 22.13 ขึ้นไป จากนั้นรัน
 
@@ -260,7 +261,7 @@ Each result has *Why this result?* and a list of related files. FileNEX also gro
 - **Where the space went:** inside the folders you approved, plus a list of large files.
 - **What grew?** and a simple forecast, based on local snapshots.
 - **Developer Storage:** repositories ranked by size and broken down into source, dependencies, build output, cache, logs, Git and Docker. Git worktrees are grouped under their repository.
-- **Cleanup Review:** every candidate is marked Safe to review, Review carefully or Protected. A **Suggested plan** explains what to look at first and why, and **Export for Claude** saves the plan as a report.
+- **Cleanup Review:** every candidate is marked Safe to review, Review carefully or Protected. A **Suggested plan** explains what to clean up first and why. **Clean up…** shows exactly what will be removed, then removes it after you confirm. **Export for Claude** saves the plan as a report.
 
 → [docs/filenex/README.md](docs/filenex/README.md)
 </details>

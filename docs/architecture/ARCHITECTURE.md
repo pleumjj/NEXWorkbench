@@ -129,7 +129,7 @@ approved folders only ──► storage-engine/walker (lstat sizes, symlinks nev
 DevNEX projects + running services ─┐  WorkNEX recent use ─┐  docker system df ─┐  MemNEX load ─► defer/throttle
                                     └──────────────┬──────┴───────────────────┘
                                                    ▼
-             dev-storage-engine (repo footprint, risk) ──► cleanup (candidates + preview only — no delete operation exists)
+             dev-storage-engine (repo footprint, risk) ──► cleanup (candidates + preview) ──► executor (confirmed items only, re-checked)
 ```
 
 ## Adding a future module

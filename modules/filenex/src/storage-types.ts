@@ -5,7 +5,8 @@
  *
  * Storage analysis obeys the same allowlist as the file index: only folders the user added are walked.
  * It records sizes (and the names of large files / known developer folders) — never file contents.
- * There is no delete operation anywhere in FileNEX: cleanup is a preview of exact paths for the user to act on.
+ * Nothing is ever deleted automatically: cleanup is a preview of exact paths, and only items the user confirms (with
+ * "Allow FileNEX to delete" turned on) are removed — regeneratable folders permanently, personal files to the Trash.
  */
 
 export type StorageHealth = 'healthy' | 'attention' | 'low' | 'critical';
@@ -49,6 +50,8 @@ export interface StorageSettings {
   /** A repository with no activity for this many days is "inactive". */
   inactiveDays: number;
   thresholds: StorageThresholds;
+  /** Let FileNEX remove items you confirm in a cleanup preview. Off by default; never automatic. */
+  allowDelete: boolean;
 }
 
 /** A known developer folder found inside an approved location, measured as one unit. */
@@ -217,9 +220,45 @@ export interface StorageForecast {
   basisDays?: number;
 }
 
+/**
+ * How a confirmed item is removed: `delete` = permanently (regeneratable folders — the Trash would not free space),
+ * `trash` = to the OS Trash (your files), `git-worktree` = `git worktree remove` (never forced), `command` = the tool's own
+ * cleanup command (Docker, package managers), `none` = FileNEX does not remove it (you decide outside FileNEX).
+ */
+export type CleanupMethod = 'delete' | 'trash' | 'git-worktree' | 'command' | 'none';
+
 export interface CleanupCandidate extends StorageEntry {
   group: 'worktrees' | 'build' | 'cache' | 'dependencies' | 'logs' | 'downloads' | 'large-old' | 'duplicates' | 'docker' | 'shared-cache';
+  method: CleanupMethod;
+  /** For `command`: the exact argv FileNEX runs (no shell interpretation of user input). */
+  command?: string[];
+  /** FileNEX can remove it after confirmation (recoverable, not protected, has a method). */
+  removable: boolean;
+  /** Why FileNEX won't remove it (when not removable). */
+  keepReason?: string;
 }
+
+export interface CleanupRunItem {
+  id: string;
+  label: string;
+  path: string;
+  method: CleanupMethod;
+  bytes: number;
+  state: 'pending' | 'running' | 'done' | 'skipped' | 'failed';
+  message?: string;
+  regenerate?: string | null;
+}
+export interface CleanupRun {
+  id: string;
+  state: 'running' | 'done';
+  startedAt: string;
+  finishedAt: string | null;
+  items: CleanupRunItem[];
+  /** Free space on the disk before / after (measured, not estimated). */
+  freeBefore: number | null;
+  freeAfter: number | null;
+}
+export interface CleanupHistoryEntry { at: string; label: string; path: string; method: CleanupMethod; bytes: number; ok: boolean; message?: string }
 
 export interface DockerStorage {
   available: boolean;

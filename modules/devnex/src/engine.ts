@@ -1,7 +1,7 @@
 import { join, resolve, sep } from 'node:path';
 import type { PortInfo, ProcessInfo } from '@nex/shared';
 import { ActionError, type PlatformAdapter } from '@nex/platform-core';
-import { ProcessController, ancestorsOf, classifyProcess, descendantsOf } from '@nex/process-core';
+import { ProcessController, agentName, ancestorsOf, classifyProcess, descendantsOf } from '@nex/process-core';
 import { SystemMonitor } from '@nex/system-core';
 import type { Container, DevnexOverview, ProjectUsage, DockerInfo, EnvReport, GitInfo, HealthIssue, PortConflict, PortEntry, Project, RuntimeCheck, RuntimeTool, Service, ServiceDefinition, ServiceStatus } from './types';
 import { DevnexError } from './errors';
@@ -15,6 +15,8 @@ import { checkRuntimes, detectRuntimes } from './runtime-engine';
 import { gitInfo } from './git-engine';
 import { dockerInfo } from './docker-engine';
 import { evaluateHealth } from './service-health';
+import { AgentMonitor } from './agent-engine/monitor';
+import type { AgentOverview } from './agent-engine';
 
 const SCAN_TTL_MS = 2500;
 const DOCKER_TTL_MS = 10_000;
@@ -45,6 +47,8 @@ export type DevnexEngineOptions = {
   system?: SystemMonitor;
   /** Protected applications (shared with MemNEX): DevNEX never stops these. */
   isProtected?: (name: string) => boolean;
+  /** Agent Monitor sampling (false in tests). */
+  agentsBackground?: boolean;
 };
 
 /** "Cannot start frontend. Port 3000 is already in use. Owner: node · PID 18342 · Project: old-test-project." */
@@ -63,12 +67,22 @@ export class DevnexEngine {
   private dockerCache: { at: number; value: DockerInfo } | null = null;
   private knownConflicts = new Set<string>();
   private defs = new Map<string, { def: ServiceDefinition; projectId: string; projectPath: string }>();
+  /** AI Agent Monitor: sessions, what they started, what they left behind. */
+  readonly agents: AgentMonitor;
 
   constructor(private readonly opts: DevnexEngineOptions) {
     this.registry = new ProjectRegistry(join(opts.dataDir, 'projects.json'));
     this.runner = new ServiceRunner(opts.platform);
     this.system = opts.system ?? new SystemMonitor(opts.platform);
     this.control = new ProcessController(opts.platform);
+    this.agents = new AgentMonitor({
+      platform: opts.platform, dataDir: opts.dataDir, background: opts.agentsBackground,
+      context: async () => {
+        const s = await this.scan();
+        const all = [...s.processes.values()];
+        return { projects: s.projects.map(p => ({ id: p.id, name: p.name, path: p.path })), blockedReason: p => this.blockedReason(p, all) };
+      },
+    });
     this.runner.onLog((serviceId, line) => opts.emit?.('devnex.log', { serviceId, line }));
     this.runner.onExit((serviceId, code, requested) => {
       this.scanCache = null;
@@ -134,6 +148,11 @@ export class DevnexEngine {
     // Port → service names may change once services are resolved (port-less script services adopt their port).
     const ports = buildPortTable(rawPorts, ctx);
     for (const project of projects) project.usage = this.usageOf(project, raw, ports);
+    for (const port of ports) {
+      const proc = port.pid ? processes.get(port.pid) : undefined;
+      const rec = proc ? this.agents.tracker.sessionOf(proc, raw) : null;
+      port.agent = rec ? { sessionId: rec.id, toolName: agentName(rec.tool), ended: !!rec.endedAt } : null;
+    }
     for (const project of projects) project.status = project.services.reduce<ServiceStatus>((s, x) => (STATUS_RANK[x.status] > STATUS_RANK[s] ? x.status : s), 'STOPPED');
 
     const containers: Container[] = docker.containers.map(c => ({ ...c, projectId: projects.find(p => (c.workingDir && (c.workingDir === p.path || c.workingDir.startsWith(p.path + sep)))
@@ -321,6 +340,41 @@ export class DevnexEngine {
     return this.start(serviceId);
   }
 
+  /** Why DevNEX never stops this process (NEX itself, the OS, a protected app), or null. Same rules as MemNEX. */
+  blockedReason(proc: ProcessInfo, all: ProcessInfo[]): string | null {
+    const byPid = new Map(all.map(p => [p.pid, p]));
+    const nex = proc.pid === process.pid || ancestorsOf(all, process.pid).has(proc.pid)
+      || [...ancestorsOf(all, proc.pid)].some(a => byPid.get(a)?.command.includes(this.opts.workspaceRoot + sep));
+    if (nex) return 'That process belongs to NEX Workbench itself. Stop it from the terminal running npm run dev.';
+    const identity = classifyProcess(proc, { selfRoot: this.opts.workspaceRoot, selfPid: process.pid, systemName: 'system' });
+    if (identity.kind === 'system' || identity.kind === 'self') return 'System protected. DevNEX only stops your own development processes.';
+    if (this.opts.isProtected?.(identity.name)) return `${identity.name} is protected in MemNEX settings. Unprotect it there first.`;
+    return null;
+  }
+
+  /** Agent sessions, their servers and leftovers (deterministic; never reads prompts or files). */
+  agentOverview(): Promise<AgentOverview> { return this.agents.overview(); }
+
+  /**
+   * "Clean up this session": a normal stop request to the chosen leftovers of an *ended* agent session.
+   * Every pid is re-checked against a fresh sample (still the same process, still a leftover, not protected). Never forces.
+   */
+  async cleanupAgentSession(sessionId: string, pids: unknown) {
+    if (!Array.isArray(pids) || !pids.length || pids.length > 100 || pids.some(p => !Number.isInteger(p) || (p as number) < 2)) throw new DevnexError('bad_request', 'Choose the processes to stop.');
+    const { stop, refused } = await this.agents.targets(sessionId, pids as number[]);
+    const stopped: { pid: number; name: string }[] = [], stillRunning: { pid: number; name: string }[] = [];
+    for (const p of stop) {
+      try {
+        const r = await this.control.stopProcess(p.pid);
+        (r.stillRunning ? stillRunning : stopped).push({ pid: p.pid, name: p.name });
+      } catch (e) { refused.push({ pid: p.pid, reason: (e as Error).message }); }
+    }
+    this.scanCache = null;
+    if (stopped.length) this.emit('devnex.agent.cleaned', { sessionId, stopped: stopped.length });
+    await this.agents.sample().catch(() => {});
+    return { stopped, stillRunning, refused };
+  }
+
   /**
    * Graceful stop of a process found on a port (e.g. "Stop existing process" in a conflict).
    * Refuses OS processes, other users' processes and NEX itself. Never escalates to force.
@@ -330,14 +384,9 @@ export class DevnexEngine {
     const s = await this.scan(true);
     const proc = s.processes.get(pid);
     if (!proc) throw new DevnexError('not_found', 'Process no longer exists.');
-    const all = [...s.processes.values()];
-    const nex = pid === process.pid || ancestorsOf(all, process.pid).has(pid)
-      || [...ancestorsOf(all, pid)].some(a => s.processes.get(a)?.command.includes(this.opts.workspaceRoot + sep));
-    if (nex) throw new DevnexError('forbidden', 'That process belongs to NEX Workbench itself. Stop it from the terminal running npm run dev.');
-    // Same rules as MemNEX: OS processes (process-core classifier) and the user's protected apps are never stopped.
-    const identity = classifyProcess(proc, { selfRoot: this.opts.workspaceRoot, selfPid: process.pid, systemName: 'system' });
-    if (identity.kind === 'system') throw new DevnexError('forbidden', 'System protected. DevNEX only stops your own development processes.');
-    if (this.opts.isProtected?.(identity.name)) throw new DevnexError('forbidden', `${identity.name} is protected in MemNEX settings. Unprotect it there first.`);
+    // Same rules as MemNEX: NEX itself, OS processes (process-core classifier) and the user's protected apps are never stopped.
+    const blocked = this.blockedReason(proc, [...s.processes.values()]);
+    if (blocked) throw new DevnexError('forbidden', blocked);
     try {
       const { stillRunning } = await this.control.stopProcess(pid);
       this.scanCache = null;
@@ -424,5 +473,5 @@ export class DevnexEngine {
     return this.registry.get();
   }
 
-  async shutdown() { await this.runner.stopAll(); }
+  async shutdown() { this.agents.stop(); await this.runner.stopAll(); }
 }

@@ -39,15 +39,24 @@ export function createDevnexModule(engine: DevnexEngine): NexModule & { continue
 
     async getAttentionItems(): Promise<AttentionItem[]> {
       const o = await engine.overview();
-      return o.issues.filter(i => i.severity !== 'info').map(i => ({
+      const agents = await engine.agentOverview().catch(() => null);
+      // A port held by a leftover of an agent is explained by the agent item — don't say it twice.
+      const agentPids = new Set(agents?.sessions.flatMap(s => s.leftovers.flatMap(l => [l.pid])) ?? []);
+      const issues = o.issues.filter(i => i.severity !== 'info' && !(i.id.startsWith('orphan:') && i.pid && agentPids.has(i.pid))).map<AttentionItem>(i => ({
         id: `devnex:${i.id}`, sourceModule: 'DevNEX', severity: i.severity, title: i.title, description: i.description,
         action: routeFor(i), actionLabel: i.id.startsWith('conflict:') ? 'Resolve' : 'Review', timestamp: o.updatedAt,
       }));
+      const fromAgents = (agents?.findings ?? []).filter(f => f.kind !== 'idle-heavy').map<AttentionItem>(f => ({
+        id: `devnex:agents:${f.kind}:${f.kind === 'duplicate-servers' ? f.projectId : f.sessionId}`, sourceModule: 'DevNEX',
+        severity: f.kind === 'leftovers' ? 'warning' : 'info', title: f.title, description: f.detail,
+        action: '/devnex/agents', actionLabel: f.kind === 'leftovers' ? 'Stop leftovers' : 'Review', timestamp: agents!.updatedAt,
+      }));
+      return [...fromAgents, ...issues];
     },
 
     async getCommands(): Promise<NexCommand[]> {
       const o = await engine.overview();
-      const base: NexCommand[] = ['Overview', 'Projects', 'Services', 'Ports', 'Logs', 'Environment', 'Settings'].map(s => ({
+      const base: NexCommand[] = ['Overview', 'Projects', 'Services', 'Agents', 'Ports', 'Logs', 'Environment', 'Settings'].map(s => ({
         id: `devnex.${s.toLowerCase()}`, title: s === 'Overview' ? 'Open DevNEX' : `DevNEX ${s}`, group: 'DevNEX', route: s === 'Overview' ? '/devnex' : `/devnex/${s.toLowerCase()}`,
       }));
       const projects = o.projects.map(p => ({ id: `devnex.project.${p.id}`, title: `Open ${p.name}`, group: 'Projects', route: `/devnex/projects?project=${p.id}`, keywords: p.path }));

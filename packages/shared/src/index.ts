@@ -16,6 +16,8 @@ export type ProcessInfo = {
   /** Resident memory in bytes. */
   memory: number;
   user: string;
+  /** When the process started (ms since epoch, ±1 s). With pid it identifies one process — pids are reused. */
+  startedAt?: number;
 };
 
 export type Pressure = 'normal' | 'warn' | 'critical';

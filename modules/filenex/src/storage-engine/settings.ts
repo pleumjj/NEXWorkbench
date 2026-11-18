@@ -1,7 +1,7 @@
 import type { StorageSettings, StorageThreshold } from '../storage-types';
 import { DEFAULT_THRESHOLDS } from '../disk-analyzer';
 
-/** Conservative defaults: analysis on (approved folders only), history on, 30 days; nothing is ever deleted. */
+/** Conservative defaults: analysis on (approved folders only), history on, 30 days; deleting is off until you allow it. */
 export const DEFAULT_STORAGE_SETTINGS: StorageSettings = {
   enabled: true,
   paused: false,
@@ -18,6 +18,7 @@ export const DEFAULT_STORAGE_SETTINGS: StorageSettings = {
   pauseOnMemoryPressure: true,
   inactiveDays: 90,
   thresholds: DEFAULT_THRESHOLDS,
+  allowDelete: false,
 };
 
 const pick = <T extends number>(v: unknown, allowed: T[], fallback: T): T => (allowed.includes(Number(v) as T) ? (Number(v) as T) : fallback);
@@ -50,5 +51,6 @@ export function normalizeStorageSettings(raw: unknown, base: StorageSettings = D
     pauseOnMemoryPressure: bool('pauseOnMemoryPressure'),
     inactiveDays: pick(r.inactiveDays, [30, 60, 90, 180, 365], base.inactiveDays),
     thresholds,
+    allowDelete: bool('allowDelete'),
   };
 }

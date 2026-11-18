@@ -1,4 +1,5 @@
 import type { ProcessInfo } from '@nex/shared';
+import { agentName, detectAgent } from './agents';
 
 /** How a process is treated: a GUI app, a command-line tool, the OS, or NEX Workbench itself. */
 export type GroupKind = 'app' | 'cli' | 'system' | 'self';
@@ -39,6 +40,9 @@ export function classifyProcess(p: ProcessInfo, opts: ClassifyOptions): GroupIde
   }
   const system = { id: 'system', name: opts.systemName, kind: 'system' as const, path: null };
   if ((!APPLE_USER_APP.test(exe) && SYSTEM_PATH.test(exe)) || SYSTEM_NAMES.has(p.name.toLowerCase().replace(/\.exe$/i, '')) || p.pid <= 1) return system;
+  // AI coding agents (Claude Code, Codex…) are one group each, wherever they are installed (CLI, editor extension, app).
+  const agent = detectAgent(p);
+  if (agent) return { id: `agent:${agent}`, name: agentName(agent), kind: 'cli', path: null };
   // Outermost bundle: helpers inside "Google Chrome.app/…/Helper.app" belong to Chrome.
   const bundle = exe.match(/^(.*?\.app)(?=\/|$)/)?.[1];
   if (bundle) {

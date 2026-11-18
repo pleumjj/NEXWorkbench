@@ -1,9 +1,9 @@
 'use client';
-/* FileNEX › Storage — Know where your space went. Analyze first. Delete deliberately (FileNEX never deletes). */
+/* FileNEX › Storage — Know where your space went. Analyze first. Delete deliberately (only what you confirm, never automatically). */
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import type { CleanupCandidate, CleanupPlan, CleanupRisk, DiskVolume, DockerStorage, DuplicateGroup, RepositoryStorage, StorageEntry, StorageForecast, StorageHealth, StorageSettings } from '@nex/filenex';
+import type { CleanupCandidate, CleanupHistoryEntry, CleanupMethod, CleanupPlan, CleanupRisk, CleanupRun, DiskVolume, DockerStorage, DuplicateGroup, RepositoryStorage, StorageEntry, StorageForecast, StorageHealth, StorageSettings } from '@nex/filenex';
 import { EmptyState, FilterChips, Icon, Meter, Modal, Pill, SearchField, Segmented, Setting, Stat, createPost, since, useNow } from '@nex/ui';
 import { localeTag } from '@nex/i18n';
 
@@ -226,7 +226,7 @@ function StorageOverview({ rev }: { rev: number }) {
           <div className="tile-head"><div><p className="eyebrow">Potentially recoverable</p><h3>{fb(o.recovery.totalBytes)}</h3></div><Link className="btn btn-ghost" href="/filenex/storage/cleanup">Review <Icon name="arrow" size={16} /></Link></div>
           {o.recovery.groups.length ? <ul className="feed">{o.recovery.groups.map(g => <li key={g.group}><span>{g.label} <small className="fine" style={{ margin: 0 }}>· {g.count}</small></span><b className="num">{fb(g.bytes)}</b></li>)}</ul>
             : <p className="fine">Nothing to review yet. Candidates come from build output, caches, old logs, old downloads, duplicates and Docker.</p>}
-          <p className="fine">Estimates for review. Source code, Git history, documents, photos, videos, .env files and databases are never included. FileNEX never deletes anything.</p>
+          <p className="fine">Estimates for review. Source code, Git history, documents, photos, videos, .env files and databases are never included. Nothing is deleted without your confirmation.</p>
         </article>
         {o.volumes.length > 1 && (
           <article className="tile span-12">
@@ -406,7 +406,7 @@ function Developer({ rev, setToast }: { rev: number; setToast: (t: Toasty) => vo
           <div className="tile-head"><div><p className="eyebrow">Docker storage</p><h3>{d.docker?.available ? fb(d.docker.images.bytes + d.docker.containers.bytes + d.docker.volumes.bytes + d.docker.buildCache.bytes) : 'Not available'}</h3></div></div>
           {d.docker?.available ? <>
             {([['Images', d.docker.images], ['Volumes', d.docker.volumes], ['Build cache', d.docker.buildCache], ['Containers', d.docker.containers]] as const).map(([l, b]) => <Bar key={l} label={l} sub={`${b.count} · ${fb(b.reclaimableBytes)} unused`} bytes={b.bytes} max={Math.max(1, d.docker!.images.bytes, d.docker!.volumes.bytes, d.docker!.buildCache.bytes)} />)}
-            <p className="fine">Read from <code>docker system df</code>. FileNEX never runs docker prune.</p>
+            <p className="fine">Read from <code>docker system df</code>. FileNEX runs Docker’s own cleanup only when you confirm it in Cleanup Review, and never touches volumes.</p>
           </> : <p className="fine">{d.docker ? d.docker.detail : 'Docker storage is turned off in Settings.'}</p>}
         </article>
         {!!d.growth.length && (
@@ -539,7 +539,7 @@ function StorageDuplicates() {
   const max = Math.max(1, ...exact.map(x => x.wasted));
   return (
     <>
-      <p className="fine section-note">Exact duplicates in your indexed files (same size and content hash). Extra copies use <b>{fb(total)}</b>. {groups.length - exact.length} possible duplicate groups are in <Link href="/filenex/duplicates">Duplicates</Link>. FileNEX never deletes files.</p>
+      <p className="fine section-note">Exact duplicates in your indexed files (same size and content hash). Extra copies use <b>{fb(total)}</b>. {groups.length - exact.length} possible duplicate groups are in <Link href="/filenex/duplicates">Duplicates</Link>. Extra copies can be moved to the Trash from <Link href="/filenex/storage/cleanup">Cleanup Review</Link>, after you confirm.</p>
       {exact.length ? <div className="tile">{exact.slice(0, 60).map(({ g, wasted }) => (
         <Bar key={g.key} label={<Link href={`/filenex/files/${g.files[0].id}`}>{g.files[0].name}</Link>} sub={`${g.files.length} copies · ${fb(g.files[0].sizeBytes)} each · ${g.files.map(f => f.parentPath.split(/[\\/]/).pop()).join(', ')}`} bytes={wasted} max={max} right={`${fb(wasted)} extra`} />
       ))}</div> : <div className="table"><EmptyState title="No exact duplicates">Exact duplicates are confirmed by hashing files of identical size in your indexed folders.</EmptyState></div>}
@@ -618,7 +618,19 @@ const GROUP_LABEL: Record<CleanupCandidate['group'], string> = {
   worktrees: 'Git worktrees', build: 'Developer build artifacts', cache: 'Developer caches', dependencies: 'Regeneratable dependencies', logs: 'Old logs', downloads: 'Old downloads',
   'large-old': 'Large old files', duplicates: 'Duplicates', docker: 'Docker unused data', 'shared-cache': 'Shared package caches',
 };
-type Preview = { selected: number; totalBytes: number; projectsAffected: number; projects: { id: string; name: string }[]; items: { id: string; path: string; name: string; label: string; detail: string | null; bytes: number; risk: CleanupRisk; regeneratable: boolean; regenerate: string | null; reason: string; projectName: string | null; group: string }[]; overlapping: number; unknown: string[]; note: string };
+type Preview = {
+  selected: number; totalBytes: number; projectsAffected: number; projects: { id: string; name: string }[];
+  items: { id: string; path: string; name: string; label: string; detail: string | null; bytes: number; risk: CleanupRisk; regeneratable: boolean; regenerate: string | null; reason: string; projectName: string | null; group: string; method: CleanupMethod; command: string | null; removable: boolean; keepReason: string | null }[];
+  byMethod: { method: CleanupMethod; count: number; bytes: number }[]; removable: number; requireTyped: boolean;
+  overlapping: number; unknown: string[]; note: string; token: string | null; allowDelete: boolean;
+};
+const METHOD: Record<CleanupMethod, { label: string; tone: string; verb: string }> = {
+  delete: { label: 'Delete permanently', tone: 'warn', verb: 'Delete…' },
+  trash: { label: 'Move to Trash', tone: 'muted', verb: 'Move to Trash…' },
+  'git-worktree': { label: 'git worktree remove', tone: 'system', verb: 'Remove worktree…' },
+  command: { label: 'Run cleanup command', tone: 'system', verb: 'Clean up…' },
+  none: { label: 'Not removed by FileNEX', tone: 'protected', verb: '' },
+};
 
 function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) => void }) {
   const now = useNow(60_000);
@@ -627,9 +639,15 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
   const [cands, setCands] = useState<CleanupCandidate[] | null>(null);
   const [risk, setRisk] = useState<'All' | 'Safe to review' | 'Review carefully'>('All');
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<Preview | null>(null);
+  const [dialog, setDialog] = useState<string[] | null>(null);
   const [plan, setPlan] = useState<CleanupPlan | null>(null);
-  useEffect(() => { get<CleanupCandidate[]>('/cleanup-candidates').then(setCands).catch(() => setCands([])); get<CleanupPlan>('/cleanup-plan').then(setPlan).catch(() => setPlan(null)); }, [rev]);
+  const [history, setHistory] = useState<CleanupHistoryEntry[]>([]);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    get<CleanupCandidate[]>('/cleanup-candidates').then(setCands).catch(() => setCands([]));
+    get<CleanupPlan>('/cleanup-plan').then(setPlan).catch(() => setPlan(null));
+    get<CleanupHistoryEntry[]>('/cleanup-history').then(setHistory).catch(() => setHistory([]));
+  }, [rev, reload]);
   const list = useMemo(() => (cands ?? []).filter(c => (!project || c.projectId === project) && (risk === 'All' || RISK[c.risk].label === risk)), [cands, risk, project]);
   const groups = useMemo(() => {
     const m = new Map<string, CleanupCandidate[]>();
@@ -639,7 +657,6 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
   if (!cands) return <EmptyState title="Finding review opportunities…" />;
   const selectedBytes = (cands ?? []).filter(c => picked.has(c.id)).reduce((n, c) => n + c.bytes, 0);
   const toggle = (id: string) => setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const openPreview = async () => { try { setPreview(await post<Preview>(`${API}/cleanup-preview`, { ids: [...picked] })); } catch (e) { setToast({ tone: 'error', text: (e as Error).message }); } };
   const reveal = async (path: string) => { try { await post(`${API}/reveal`, { path }); } catch (e) { setToast({ tone: 'error', text: (e as Error).message }); } };
   const projectName = project ? cands.find(c => c.projectId === project)?.projectName : null;
   /** Report for another assistant: the selection, or what the current filter shows. */
@@ -656,8 +673,8 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
         {project && <span className="chip on">{projectName ?? 'Project'} <Link href="/filenex/storage/cleanup" aria-label="Show all projects" style={{ color: 'inherit', marginLeft: 6 }}><Icon name="close" size={12} /></Link></span>}
         {!!list.length && <a className="btn btn-line btn-sm" style={{ marginLeft: 'auto' }} href={reportHref(false)} download="filenex-cleanup-report.md" title="Markdown report with exact paths and safety rules, to continue the cleanup with Claude"><Icon name="external" size={12} />Export for Claude</a>}
       </div>
-      {plan && !project && <SuggestedPlan plan={plan} onSelect={ids => { setPicked(new Set(ids)); setRisk('All'); setToast({ tone: 'ok', text: `${ids.length} items selected — review them below, then Preview cleanup.` }); }} />}
-      <p className="fine section-note">Analyze first. Delete deliberately. These are review opportunities — FileNEX never deletes anything. Select items to preview exactly what they cover, then remove what you no longer need yourself. Source code, Git history, documents, photos, videos, .env files and databases are protected and never listed.</p>
+      {plan && !project && <SuggestedPlan plan={plan} onClean={ids => setDialog(ids)} onSelect={ids => { setPicked(new Set(ids)); setRisk('All'); setToast({ tone: 'ok', text: `${ids.length} items selected — review them below, then Clean up.` }); }} />}
+      <p className="fine section-note">Analyze first. Delete deliberately. Nothing is removed until you confirm it: build output, caches and dependencies are deleted permanently (they can be re-created); your files go to the Trash. Source code, Git history, documents, photos, videos, .env files and databases are protected and never listed.</p>
       {groups.length ? groups.map(([group, items]) => (
         <Fragment key={group}>
           <div className="tile-head" style={{ marginTop: 18, marginBottom: 8 }}><div><p className="eyebrow" style={{ margin: 0 }}>{GROUP_LABEL[group as CleanupCandidate['group']]} · {items.length}</p>{group === 'worktrees' && <p className="fine" style={{ margin: '2px 0 0' }}>Separate checkouts (e.g. Claude Code agents in .claude/worktrees), each with its own node_modules. Remove with <code>git worktree remove</code> — the branch and its commits stay. Worktrees with uncommitted changes are never listed here.</p>}</div><b className="num" style={{ whiteSpace: 'nowrap' }}>{fb(items.reduce((n, c) => n + c.bytes, 0))}</b></div>
@@ -672,7 +689,7 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
                 <span className="fine" style={{ margin: 0 }}>{c.regeneratable ? 'Regeneratable' : 'No'}</span>
                 <span className="fine" style={{ margin: 0 }}>{c.lastUsedAt ? daysAgo(c.lastUsedAt, now) : '—'}</span>
                 <span className="fine" style={{ margin: 0 }}>{c.projectName ?? '—'}</span>
-                <span className="cell-actions">{c.regenerate && c.group === 'worktrees' && <button className="btn btn-ghost btn-sm" title={c.regenerate} onClick={() => { navigator.clipboard?.writeText(c.regenerate!); setToast({ tone: 'ok', text: 'Command copied — run it in a terminal when you are sure.' }); }}>Copy command</button>}{!c.path.startsWith('docker:') && <button className="btn btn-ghost btn-sm" onClick={() => reveal(c.path)}>Reveal</button>}</span>
+                <span className="cell-actions">{c.removable ? <button className="btn btn-line btn-sm" onClick={() => setDialog([c.id])}>{METHOD[c.method].verb}</button> : c.keepReason && <span className="fine" style={{ margin: 0 }} title={c.keepReason}><Icon name="lock" size={12} /></span>}{!c.path.startsWith('docker:') && <button className="btn btn-ghost btn-sm" onClick={() => reveal(c.path)}>Reveal</button>}</span>
               </div>
             ))}
           </div>
@@ -685,32 +702,123 @@ function CleanupReview({ rev, setToast }: { rev: number; setToast: (t: Toasty) =
           <span style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-ghost" onClick={() => setPicked(new Set())}>Clear</button>
             <a className="btn btn-line" href={reportHref(true)} download="filenex-cleanup-report.md">Export selected for Claude</a>
-            <button className="btn btn-ink" onClick={openPreview}>Preview cleanup</button>
+            <button className="btn btn-ink" onClick={() => setDialog([...picked])}>Clean up…</button>
           </span>
         </div>
       )}
 
-      {preview && (
-        <Modal onClose={() => setPreview(null)}>
-          <div className="modal-wide">
-            <p className="eyebrow">Cleanup preview</p>
-            <h2 className="h2">Review exactly what this covers</h2>
-            <dl className="facts" style={{ margin: '14px 0' }}>
-              <div><dt>Selected</dt><dd className="mid-num">{preview.selected} item{preview.selected === 1 ? '' : 's'}</dd></div>
-              <div><dt>Total size</dt><dd className="mid-num">{fb(preview.totalBytes)}</dd></div>
-              <div><dt>Projects affected</dt><dd className="mid-num">{preview.projectsAffected}</dd></div>
-            </dl>
-            {preview.overlapping > 0 && <p className="fine">{preview.overlapping} selected item{preview.overlapping > 1 ? 's are' : ' is'} inside another selected folder — counted once.</p>}
-            <ul className="st-paths">{preview.items.map(i => <li key={i.id}><span><b>{i.label}</b>{i.detail && <small style={{ display: 'block' }}>{i.detail}</small>}<span className="mono" title={i.path}>{i.path.startsWith('docker:') ? 'Docker' : i.path}</span></span><span className="num">{fb(i.bytes)}</span>{i.regenerate && <small>{i.group === 'worktrees' ? 'Remove with' : 'Re-create with'}: <code>{i.regenerate}</code></small>}</li>)}</ul>
-            <div className="notice" style={{ marginTop: 12 }}><Icon name="lock" size={16} /><div><b>Nothing has been deleted.</b>{preview.note}</div></div>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setPreview(null)}>Close</button>
-              <button className="btn btn-line" onClick={() => { navigator.clipboard?.writeText(preview.items.filter(i => !i.path.startsWith('docker:')).map(i => i.path).join('\n')); setToast({ tone: 'ok', text: 'Paths copied.' }); }}><Icon name="copy" size={13} />Copy paths</button>
+      {dialog && <CleanupDialog ids={dialog} setToast={setToast} onClose={changed => { setDialog(null); if (changed) { setPicked(new Set()); setReload(r => r + 1); } }} />}
+
+      {!!history.length && <>
+        <h3 className="section-title" style={{ marginTop: 28 }}>Recent cleanups</h3>
+        <div className="table st-scroll" role="table">
+          {history.slice(0, 12).map((h, i) => (
+            <div className="fx-row" key={`${h.at}:${h.path}:${i}`}>
+              <span className="cell-app" style={{ minWidth: 0 }}><span className="app-icon"><Icon name={h.ok ? 'check' : 'alert'} size={14} /></span><span style={{ minWidth: 0 }}><b translate="no">{h.label}</b><small>{METHOD[h.method].label} · {daysAgo(h.at, now)}{h.message ? ` · ${h.message}` : ''}</small></span></span>
+              <span className="num">{fb(h.bytes)}</span>
+              <span />
             </div>
-          </div>
-        </Modal>
-      )}
+          ))}
+        </div>
+        <p className="fine">Kept on this computer. Items moved to the Trash can be restored from the Trash.</p>
+      </>}
     </>
+  );
+}
+
+/** Preview → confirm → progress → result. Removes only what the preview listed, after the engine re-checks each item. */
+function CleanupDialog({ ids, onClose, setToast }: { ids: string[]; onClose: (changed: boolean) => void; setToast: (t: Toasty) => void }) {
+  const [p, setP] = useState<Preview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+  const [allowed, setAllowed] = useState(false);
+  const [run, setRun] = useState<CleanupRun | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { post<Preview>(`${API}/cleanup-preview`, { ids }).then(x => { setP(x); setAllowed(x.allowDelete); }).catch(e => setError((e as Error).message)); }, [ids]);
+  useEffect(() => {
+    if (!run || run.state === 'done') return;
+    const t = setInterval(() => get<CleanupRun>('/cleanup-status').then(r => { if (r) setRun(r); }).catch(() => {}), 800);
+    return () => clearInterval(t);
+  }, [run]);
+  const allow = async () => { try { await call('PUT', '/settings', { allowDelete: true }); setAllowed(true); } catch (e) { setToast({ tone: 'error', text: (e as Error).message }); } };
+  const confirm = async () => {
+    if (!p?.token) return;
+    setBusy(true);
+    try { setRun(await post<CleanupRun>(`${API}/cleanup-confirm`, { token: p.token, confirm: typed })); }
+    catch (e) { setToast({ tone: 'error', text: (e as Error).message }); }
+    setBusy(false);
+  };
+  const close = () => onClose(!!run);
+
+  if (error) return <Modal onClose={close}><p className="eyebrow">Clean up</p><h2 className="h2">Preview unavailable</h2><p>{error}</p><div className="modal-actions"><button className="btn btn-ghost" onClick={close}>Close</button></div></Modal>;
+  if (!p) return <Modal onClose={close}><p className="eyebrow">Clean up</p><h2 className="h2">Preparing preview…</h2></Modal>;
+
+  if (run) {
+    const done = run.items.filter(i => i.state === 'done'), skipped = run.items.filter(i => i.state === 'skipped'), failed = run.items.filter(i => i.state === 'failed');
+    const freed = run.freeAfter != null && run.freeBefore != null ? run.freeAfter - run.freeBefore : null;
+    const finished = run.state === 'done';
+    return (
+      <Modal onClose={finished ? close : () => {}}>
+        <div className="modal-wide">
+          <p className="eyebrow">Clean up</p>
+          <h2 className="h2">{finished ? (done.length ? 'Cleanup finished' : 'Nothing was removed') : `Removing… ${done.length + skipped.length + failed.length} of ${run.items.length}`}</h2>
+          <dl className="facts" style={{ margin: '14px 0' }}>
+            <div><dt>Removed</dt><dd className="mid-num">{done.length}</dd></div>
+            <div><dt>Skipped</dt><dd className="mid-num">{skipped.length + failed.length}</dd></div>
+            <div><dt>Free space gained</dt><dd className="mid-num">{finished && freed != null ? (freed > 0 ? `+${fb(freed)}` : '—') : '…'}</dd></div>
+          </dl>
+          <ul className="st-paths">{run.items.map(i => (
+            <li key={i.id}>
+              <span><b translate="no">{i.label}</b><span className="mono" title={i.path} style={{ display: 'block' }}>{i.path.startsWith('docker:') ? 'Docker' : i.path}</span>{i.message && <small style={{ display: 'block' }}>{i.message}</small>}</span>
+              <span className="num">{i.state === 'done' ? <Pill tone="ok">Removed</Pill> : i.state === 'skipped' ? <Pill tone="muted">Skipped</Pill> : i.state === 'failed' ? <Pill tone="protected">Failed</Pill> : i.state === 'running' ? <Pill tone="system">Working…</Pill> : <Pill tone="muted">Waiting</Pill>}</span>
+            </li>
+          ))}</ul>
+          {finished && freed != null && freed <= 0 && done.some(i => i.method === 'trash') && <p className="fine">Items in the Trash still use space until you empty the Trash.</p>}
+          {finished && skipped.length + failed.length > 0 && <p className="fine">Skipped items changed since the preview or are in use — nothing was removed on a stale confirmation. The list updates after the next analysis.</p>}
+          <div className="modal-actions"><button className="btn btn-ink" onClick={close} disabled={!finished}>Done</button></div>
+        </div>
+      </Modal>
+    );
+  }
+
+  const removable = p.items.filter(i => i.removable), kept = p.items.filter(i => !i.removable);
+  const bytes = p.byMethod.reduce((n, m) => n + m.bytes, 0);
+  const typedOk = !p.requireTyped || typed.trim().toLowerCase() === 'delete';
+  return (
+    <Modal onClose={close}>
+      <div className="modal-wide">
+        <p className="eyebrow">Clean up</p>
+        <h2 className="h2">{removable.length ? `Remove ${removable.length} item${removable.length === 1 ? '' : 's'} · ${fb(bytes)}` : 'Nothing here can be removed by FileNEX'}</h2>
+        {!!p.byMethod.length && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>{p.byMethod.map(m => <Pill key={m.method} tone={METHOD[m.method].tone}>{METHOD[m.method].label} · {m.count} · {fb(m.bytes)}</Pill>)}</div>}
+        {p.overlapping > 0 && <p className="fine">{p.overlapping} selected item{p.overlapping > 1 ? 's are' : ' is'} inside another selected folder — counted once.</p>}
+        {!!removable.length && <ul className="st-paths">{removable.map(i => (
+          <li key={i.id}>
+            <span><b translate="no">{i.label}</b>{i.detail && <small style={{ display: 'block' }}>{i.detail}</small>}<span className="mono" title={i.path} style={{ display: 'block' }}>{i.path.startsWith('docker:') ? 'Docker' : i.path}</span>
+              <small style={{ display: 'block' }}>{METHOD[i.method].label}{i.command ? <>: <code>{i.command}</code></> : i.regenerate && i.method === 'delete' ? <><span> · re-create with </span><code>{i.regenerate}</code></> : null}</small></span>
+            <span className="num">{fb(i.bytes)}</span>
+          </li>
+        ))}</ul>}
+        {!!kept.length && <>
+          <p className="eyebrow" style={{ marginTop: 14 }}>Not included · {kept.length}</p>
+          <ul className="st-paths">{kept.map(i => <li key={i.id}><span><b translate="no">{i.label}</b><small style={{ display: 'block' }}>{i.keepReason}</small></span><span className="num">{fb(i.bytes)}</span></li>)}</ul>
+        </>}
+        {p.byMethod.some(m => m.method === 'trash') && <p className="fine">Your files go to the Trash — you can restore them, but they use space until you empty the Trash.</p>}
+        {p.byMethod.some(m => m.method === 'delete') && <p className="fine">Build output, caches and dependencies are deleted permanently: moving them to the Trash wouldn’t free any space. They are re-created by building or reinstalling.</p>}
+        {!!removable.length && !allowed && (
+          <div className="notice" style={{ marginTop: 12 }}><Icon name="lock" size={16} /><div><b>Deleting is turned off.</b>Allow FileNEX to remove items you confirm. It never deletes anything automatically, and you can turn this off again in Settings. <button className="chip-action" onClick={allow}>Allow deleting</button></div></div>
+        )}
+        {!!removable.length && allowed && p.requireTyped && (
+          <label className="field">To confirm, type “delete” below. It’s needed for items marked “Review carefully” or more than 20 GB in total.
+            <input value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" spellCheck={false} placeholder="delete" aria-label="Type delete to confirm" />
+          </label>
+        )}
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={close}>Cancel</button>
+          <button className="btn btn-line" onClick={() => { navigator.clipboard?.writeText(p.items.filter(i => !i.path.startsWith('docker:')).map(i => i.path).join('\n')); setToast({ tone: 'ok', text: 'Paths copied.' }); }}><Icon name="copy" size={13} />Copy paths</button>
+          {!!removable.length && <button className="btn btn-danger" disabled={!allowed || !typedOk || busy || !p.token} onClick={confirm}>{busy ? 'Starting…' : `Remove ${removable.length} · ${fb(bytes)}`}</button>}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -737,8 +845,11 @@ export function StorageSettingsSection({ setToast }: { setToast: (t: Toasty) => 
         <Setting title="Enable storage analysis" text="Measures sizes inside your approved folders only (no folder permission, no scanning). Disk capacity is always shown. Nothing is ever deleted automatically.">
           <Switch on={s.enabled} label="Storage analysis" onChange={v => save({ enabled: v }, v ? 'Storage analysis on.' : 'Storage analysis off.')} />
         </Setting>
-        <Setting title="Automatic deletion" text="Not available — by design. FileNEX analyzes and previews; you decide and act.">
-          <span className="chip chip-local"><Icon name="lock" size={13} />Off</span>
+        <Setting title="Allow FileNEX to delete" text="Remove items you confirm in Cleanup Review: build output, caches and dependencies permanently (they can be re-created), your files to the Trash, worktrees with git worktree remove. Protected items are never removed.">
+          <Switch on={s.allowDelete} label="Allow FileNEX to delete" onChange={v => save({ allowDelete: v }, v ? 'FileNEX can now remove items you confirm.' : 'Deleting is off. Cleanup Review only previews.')} />
+        </Setting>
+        <Setting title="Automatic deletion" text="Never — by design. Even when deleting is allowed, FileNEX removes only what you confirm, after checking each item again.">
+          <span className="chip chip-local"><Icon name="lock" size={13} />Never</span>
         </Setting>
         <Setting title="Scan schedule" text="How often approved folders are re-measured. Unchanged developer folders are reused, so updates are quick.">
           <select className="select" value={s.scanEveryHours} onChange={e => save({ scanEveryHours: Number(e.target.value) })} aria-label="Scan schedule">
@@ -780,7 +891,7 @@ export function StorageSettingsSection({ setToast }: { setToast: (t: Toasty) => 
         <Setting title="Build artifact detection" text="Recognise .next, dist, build, out, target, caches and coverage (generic names only inside projects).">
           <Switch on={s.detectBuildArtifacts} label="Build artifact detection" onChange={v => save({ detectBuildArtifacts: v })} />
         </Setting>
-        <Setting title="Docker storage" text="Read sizes from docker system df (images, volumes, build cache). Never prunes.">
+        <Setting title="Docker storage" text="Read sizes from docker system df (images, volumes, build cache). Cleanup runs only when you confirm it; volumes are never removed.">
           <Switch on={s.dockerStorage} label="Docker storage" onChange={v => save({ dockerStorage: v })} />
         </Setting>
         <Setting title="Shared developer caches" text="Measure the total size of npm, pnpm and Yarn caches. They are outside your folders, so this is off unless you allow it — size only, no file names.">
@@ -812,7 +923,7 @@ export function StorageSettingsSection({ setToast }: { setToast: (t: Toasty) => 
 }
 
 /** Suggested, explained plan: steps in order of gain vs. risk (deterministic rules — suggestions only). */
-function SuggestedPlan({ plan, onSelect }: { plan: CleanupPlan; onSelect: (ids: string[]) => void }) {
+function SuggestedPlan({ plan, onSelect, onClean }: { plan: CleanupPlan; onSelect: (ids: string[]) => void; onClean: (ids: string[]) => void }) {
   const [open, setOpen] = useState(true);
   const [more, setMore] = useState<Set<string>>(new Set());
   return (
@@ -828,10 +939,10 @@ function SuggestedPlan({ plan, onSelect }: { plan: CleanupPlan; onSelect: (ids: 
             <li key={st.key}>
               <div className="st-step-head">
                 <div><b>{st.title}</b> <span className="num">~{fb(st.bytes)}</span><p className="fine" style={{ margin: '2px 0 0' }}>{st.why}</p></div>
-                {!!st.ids.length && <button className="btn btn-line btn-sm" onClick={() => onSelect(st.ids)}>Select these ({st.ids.length})</button>}
+                {!!st.ids.length && <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}><button className="btn btn-ghost btn-sm" onClick={() => onSelect(st.ids)}>Select these ({st.ids.length})</button><button className="btn btn-ink btn-sm" onClick={() => onClean(st.ids)}>{`Clean up ~${fb(st.bytes)}…`}</button></span>}
               </div>
               <ul className="st-step-items">
-                {(all ? st.items : st.items.slice(0, 6)).map(it => <li key={`${it.label}:${it.path}`}><span><span className="mono" title={it.path || undefined}>{it.label}</span>{it.note && <small> — {it.note}</small>}</span><span className="num">{it.bytes ? fb(it.bytes) : ''}</span></li>)}
+                {(all ? st.items : st.items.slice(0, 6)).map(it => <li key={`${it.label}:${it.path}`}><span><span className="mono" title={it.path || undefined}>{it.label}</span>{it.note && <small> — {it.note}</small>}</span><span className="num" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{st.key === 'check-first' && it.id && <button className="btn btn-ghost btn-sm" onClick={() => onClean([it.id!])}>Remove…</button>}{it.bytes ? fb(it.bytes) : ''}</span></li>)}
                 {st.more > 0 && <li className="fine">…and {st.more} more{st.ids.length ? ' (included in “Select these”)' : ''}</li>}
                 {!all && st.items.length > 6 && <li><button className="chip-action" onClick={() => setMore(m => new Set(m).add(st.key))}>Show all</button></li>}
               </ul>
@@ -841,7 +952,7 @@ function SuggestedPlan({ plan, onSelect }: { plan: CleanupPlan; onSelect: (ids: 
           );
         })}
       </ol> : <p className="fine">Nothing worth cleaning up right now.</p>)}
-      {open && <p className="fine" style={{ marginBottom: 0 }}>Suggestions from fixed rules (size, risk, last change, running services, Git state) — not AI. Selecting items deletes nothing; Preview shows exactly what they cover.</p>}
+      {open && <p className="fine" style={{ marginBottom: 0 }}>Suggestions from fixed rules (size, risk, last change, running services, Git state) — not AI. Clean up shows exactly what will be removed and waits for your confirmation.</p>}
     </article>
   );
 }

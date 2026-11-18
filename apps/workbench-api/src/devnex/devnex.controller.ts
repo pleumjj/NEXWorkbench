@@ -20,6 +20,14 @@ export class DevnexController {
   @Get('environment') environment() { return handle(this.engine.environment()); }
   @Get('registry') registry() { return this.engine.registry.get(); }
 
+  /** AI Agent Monitor: sessions, servers they started, leftovers of ended sessions. Read-only. */
+  @Get('agents') agents() { return handle(this.engine.agentOverview()); }
+  /** Normal stop request to chosen leftovers of an ended agent session ({ confirmed: true, pids }). Re-checked; never forced. */
+  @Post('agents/:id/cleanup') cleanupAgent(@Param('id') id: string, @Body() body: { confirmed?: boolean; pids?: unknown }) {
+    confirm(body);
+    return handle(this.engine.cleanupAgentSession(id, body.pids));
+  }
+
   @Get('services/:id/logs') logs(@Param('id') id: string) { return handle(() => this.engine.logs(id)); }
   @Post('services/:id/logs/clear') clearLogs(@Param('id') id: string) { return handle(() => this.engine.clearLogs(id)); }
   @Post('services/:id/start') start(@Param('id') id: string) { return handle(this.engine.start(id)); }

@@ -26,6 +26,7 @@ export type PlanInput = {
  *   2. Dependencies of projects not touched in a while — keeping projects in use; noting the same project installed twice.
  *   3. Check first — worktrees (by Git state), big logs, old archives.
  *   4. Your call — personal downloads, duplicates, small caches, Docker, shared caches.
+ * Step ids contain only items FileNEX can remove after confirmation; nothing here removes anything.
  */
 export function buildCleanupPlan(i: PlanInput): CleanupPlan {
   const { now } = i;
@@ -59,7 +60,7 @@ export function buildCleanupPlan(i: PlanInput): CleanupPlan {
       why: 'Re-created by building the project. Removing it only makes the next build take a little longer.',
       items: buildOk.slice(0, top).map(c => item(c)), more: Math.max(0, buildOk.length - top),
       keep: [...running.map(p => ({ label: p, reason: 'its services are running — a service may be using the build output' })), ...busyWt.map(w => ({ label: w, reason: 'still in use (see step 3)' }))],
-      notes: [], ids: buildOk.map(c => c.id),
+      notes: [], ids: buildOk.filter(c => c.removable).map(c => c.id),
     });
   }
 
@@ -78,7 +79,7 @@ export function buildCleanupPlan(i: PlanInput): CleanupPlan {
       items: idle.slice(0, top).map(c => item(c, c.lastUsedAt ? `not changed since ${monthYear(c.lastUsedAt)}` : undefined)), more: Math.max(0, idle.length - top),
       keep: keepDeps.slice(0, 8).map(p => ({ label: p, reason: 'used recently' })),
       notes: twice.slice(0, 4).map(cs => `${cs[0].projectName} is installed in ${cs.length} places (${cs.map(c => name(c).replace(/\/node_modules$/, '')).join(', ')}) — ${fmt(sumOnce(cs))} together.`),
-      ids: idle.map(c => c.id),
+      ids: idle.filter(c => c.removable).map(c => c.id),
     });
   }
 
@@ -89,7 +90,7 @@ export function buildCleanupPlan(i: PlanInput): CleanupPlan {
     const label = `${w.projectName ? `${w.projectName} worktree ` : 'Worktree '}${w.name}`;
     if (w.uncommitted) check.push({ id: null, label, path: w.path, bytes: w.totalBytes, note: `${w.uncommitted} uncommitted change${w.uncommitted > 1 ? 's' : ''} — when its work is finished and merged, remove the whole worktree with git worktree remove instead of deleting folders inside it` });
     else if (w.inUse) check.push({ id: null, label, path: w.path, bytes: w.totalBytes, note: `last activity ${ago(w.lastActiveAt, now)} — still in use, don’t remove yet` });
-    else { const c = i.candidates.find(x => x.group === 'worktrees' && x.path === w.path); check.push({ id: c?.id ?? null, label, path: w.path, bytes: w.totalBytes, note: `clean, idle since ${ago(w.lastActiveAt, now)} — check the branch is merged or pushed, then git worktree remove` }); }
+    else { const c = i.candidates.find(x => x.group === 'worktrees' && x.path === w.path); check.push({ id: c?.removable ? c.id : null, label, path: w.path, bytes: w.totalBytes, note: `clean, idle since ${ago(w.lastActiveAt, now)} — check the branch is merged or pushed, then git worktree remove` }); }
   }
   for (const c of i.candidates.filter(x => x.group === 'logs' && x.bytes >= 50 * MB).sort((a, b) => b.bytes - a.bytes).slice(0, 3)) check.push({ ...item(c, 'remove if you don’t need them to investigate an incident'), label: /log files?$/.test(c.name) ? `${name(c)} (${c.name})` : name(c) });
   for (const c of i.candidates.filter(x => x.group === 'large-old').sort((a, b) => b.bytes - a.bytes).slice(0, 3)) check.push(item(c, `old ${c.path.split('.').pop()?.toUpperCase()} file — often a backup or installer kept after use`));
@@ -119,7 +120,7 @@ export function buildCleanupPlan(i: PlanInput): CleanupPlan {
   const d = i.disk;
   const urgency: CleanupPlan['urgency'] = !d ? 'none' : d.status === 'critical' || d.status === 'low' ? 'now' : d.status === 'attention' ? 'soon' : 'none';
   const state = !d ? '' : `${fmt(d.freeBytes)} free of ${fmt(d.totalBytes)} — ${urgency === 'now' ? 'low on space: start with step 1' : urgency === 'soon' ? 'worth freeing some space soon' : 'that’s fine, no rush'}.`;
-  const headline = `Read-only analysis — nothing has been deleted. ${state}${steps.length ? ' If you want space back, this order gives the most for the least risk.' : ' Nothing worth cleaning up right now.'}`.trim();
+  const headline = `Nothing is deleted until you confirm. ${state}${steps.length ? ' If you want space back, this order gives the most for the least risk.' : ' Nothing worth cleaning up right now.'}`.trim();
   return { generatedAt: new Date(now).toISOString(), headline, urgency, steps };
 }
 

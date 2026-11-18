@@ -8,8 +8,9 @@ const LARGE_SORTS = ['largest', 'oldest', 'newest', 'recent', 'location'] as con
 
 /**
  * /filenex/storage/* — Storage Intelligence. Routing and validation only.
- * Analyze first, delete deliberately: there is deliberately NO endpoint that deletes files, folders or Docker data.
- * Cleanup preview only lists exact paths; the user acts in Finder / Explorer / their tools.
+ * Analyze first, delete deliberately: nothing is removed automatically. Removal needs "Allow FileNEX to delete" in
+ * Settings, a fresh preview token, and (for anything sensitive or large) the typed word "delete". Every item is
+ * re-checked by the engine right before it is removed.
  */
 @Controller('filenex/storage')
 export class FilenexStorageController {
@@ -52,8 +53,12 @@ export class FilenexStorageController {
     return handle(() => this.storage.cleanupReport({ ids: ids ? ids.split(',').filter(Boolean) : undefined, risk: risk || null, project: project || null }));
   }
 
-  /** Preview only: lists exactly what a selection covers. Nothing is deleted. */
+  /** Lists exactly what a selection covers and how each item would be removed. Deletes nothing; returns a 5-minute token. */
   @Post('cleanup-preview') preview(@Body() body: { ids?: unknown }) { return handle(() => this.storage.cleanupPreview(body?.ids)); }
+  /** Removes the items of a confirmed preview: { token, confirm?: "delete" }. Runs in the background — poll cleanup-status. */
+  @Post('cleanup-confirm') confirm(@Body() body: unknown) { return handle(() => this.storage.cleanupConfirm(body)); }
+  @Get('cleanup-status') cleanupStatus() { return this.storage.cleanupStatus(); }
+  @Get('cleanup-history') cleanupHistory() { return this.storage.cleanupHistory(); }
 
   /** Open / reveal an item FileNEX found in an approved folder (validated server-side). */
   @Post('open') open(@Body() body: { path?: unknown }) { return handle(() => this.storage.open(body?.path)); }

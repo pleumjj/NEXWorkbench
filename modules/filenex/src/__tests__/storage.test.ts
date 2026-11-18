@@ -37,10 +37,12 @@ const age = (path: string, ageMs: number) => { const t = new Date(NOW - ageMs); 
 const dockerOff = async (): Promise<DockerStorage> => ({ available: false, detail: 'Docker is not running.', images: { bytes: 0, reclaimableBytes: 0, count: 0 }, containers: { bytes: 0, reclaimableBytes: 0, count: 0 }, volumes: { bytes: 0, reclaimableBytes: 0, count: 0 }, buildCache: { bytes: 0, reclaimableBytes: 0, count: 0 }, byComposeProject: {}, checkedAt: new Date().toISOString() });
 
 let n = 0;
-function makeEngine(opts: { worktree?: (path: string) => WorktreeGit | null; projects?: (home: string) => ProjectActivity[]; contexts?: (home: string) => WorkContextRef[]; git?: (path: string) => 'ignored' | 'tracked' | 'untracked' | null; free?: number } = {}) {
+function makeEngine(opts: { worktree?: (path: string) => WorktreeGit | null; projects?: (home: string) => ProjectActivity[]; contexts?: (home: string) => WorkContextRef[]; git?: (path: string) => 'ignored' | 'tracked' | 'untracked' | null; free?: number; docker?: () => Promise<DockerStorage> } = {}) {
   const home = join(root, `h${++n}`);
   mkdirSync(home, { recursive: true });
   const opened: string[] = [];
+  const trashed: string[] = [];
+  const ran: string[] = [];
   const engine = new FilenexEngine({
     platform: {
       openPath: async p => { opened.push(`open:${p}`); }, revealPath: async p => { opened.push(`reveal:${p}`); },
@@ -54,13 +56,14 @@ function makeEngine(opts: { worktree?: (path: string) => WorktreeGit | null; pro
       git: async () => ({ isRepo: true, branch: 'feature/versioning', changed: 0, untracked: 0 }),
     },
     storage: {
-      sizeMode: 'apparent', docker: dockerOff, gitPathState: async (_r, p) => opts.git?.(p) ?? 'ignored', worktreeGit: async p => opts.worktree?.(p) ?? null,
+      sizeMode: 'apparent', docker: opts.docker ?? dockerOff,
+      trash: async p => { trashed.push(p); rmSync(p, { recursive: true }); }, runCommand: async (cmd, args) => { ran.push([cmd, ...args].join(' ')); if (args[2] === 'worktree') rmSync(args[4], { recursive: true }); }, gitPathState: async (_r, p) => opts.git?.(p) ?? 'ignored', worktreeGit: async p => opts.worktree?.(p) ?? null,
       statfs: async () => ({ bsize: 4096, blocks: (1000 * GB) / 4096, bavail: ((opts.free ?? 300) * GB) / 4096 }),
     },
   });
   engine.start();
   const approve = (rel: string) => engine.addLocation(join(home, rel), { confirmBroad: true });
-  return { engine, home, opened, approve };
+  return { engine, home, opened, approve, trashed, ran };
 }
 const project = (home: string, rel: string, extra: Partial<ProjectActivity> = {}): ProjectActivity => ({ id: rel.replace(/\W/g, '-'), name: rel.split('/').pop()!, path: join(home, rel), runningServices: 0, status: 'STOPPED', composeProjects: [], ...extra });
 
@@ -373,7 +376,7 @@ test('safety · source and .env are protected; .env is never named', async () =>
   assert.ok(!cands.some(c => c.path.includes('local.sqlite')), 'databases are not suggested for cleanup');
 });
 
-test('safety · cleanup preview lists exact paths and deletes nothing', async () => {
+test('safety · cleanup preview lists exact paths, how each would be removed, and deletes nothing', async () => {
   const { engine, home, approve } = makeEngine({ projects: h => [project(h, 'C/old'), project(h, 'C/other')] });
   jsRepo(join(home, 'C/old'), { ageMs: 200 * DAY });
   jsRepo(join(home, 'C/other'), { ageMs: 200 * DAY });
@@ -388,13 +391,96 @@ test('safety · cleanup preview lists exact paths and deletes nothing', async ()
   assert.deepEqual(p.items.map(i => i.path).sort(), pick.map(c => c.path).sort(), 'exact paths, nothing hidden');
   assert.equal(p.totalBytes, 2 * (51_000 + 30_000 + 4000));
   assert.deepEqual(p.unknown, ['not-a-real-id']);
-  assert.equal(p.deletes, false);
+  assert.ok(p.items.every(i => i.method === 'delete' && i.removable), 'regeneratable folders are deleted permanently (the Trash frees nothing)');
+  assert.ok(p.token, 'a one-time token for confirming exactly this preview');
+  assert.equal(p.allowDelete, false, 'deleting is off by default');
   for (const c of pick) assert.ok(existsSync(c.path), `${c.path} still exists`);
-  // There is no delete operation in the storage engine.
+  // The only engine operation that removes anything is the confirmed cleanup.
   const methods = Object.getOwnPropertyNames(StorageEngine.prototype);
-  const destructive = methods.filter(m => /delete|remove(?!d)|prune|trash|unlink|purge|wipe|^rm|^clean(?!up(Preview|Report|Plan)$)/i.test(m));
-  assert.deepEqual(destructive, [], 'no delete operation exists');
+  const destructive = methods.filter(m => /delete|remove(?!d)|prune|trash|unlink|purge|wipe|^rm|^clean(?!up(Preview|Report|Plan|Status|History)$)/i.test(m));
+  assert.deepEqual(destructive, ['cleanupConfirm'], 'one removal entry point');
   await assert.rejects(engine.storage.cleanupPreview([]), /at least one/);
+});
+
+test('cleanup · nothing is removed unless deleting is allowed, the preview is fresh and (when needed) “delete” is typed', async () => {
+  const { engine, home, approve } = makeEngine({ projects: h => [project(h, 'C/old')] });
+  jsRepo(join(home, 'C/old'), { ageMs: 200 * DAY });
+  approve('C');
+  await engine.storage.scanAll();
+  const pick = (await engine.storage.candidates()).filter(c => ['node_modules', '.next', 'coverage'].includes(c.name));
+  const p = await engine.storage.cleanupPreview(pick.map(c => c.id));
+  await assert.rejects(engine.storage.cleanupConfirm({ token: p.token, confirm: 'delete' }), /turned off/);
+  engine.storage.updateSettings({ allowDelete: true });
+  await assert.rejects(engine.storage.cleanupConfirm({ token: 'made-up', confirm: 'delete' }), /expired/);
+  if (p.requireTyped) await assert.rejects(engine.storage.cleanupConfirm({ token: p.token }), /Type “delete”/);
+  for (const c of pick) assert.ok(existsSync(c.path), 'refused confirmations remove nothing');
+
+  const run = await engine.storage.cleanupConfirm({ token: p.token, confirm: 'delete' });
+  assert.equal(run.state, 'done');
+  assert.deepEqual(run.items.map(i => i.state), ['done', 'done', 'done']);
+  for (const c of pick) assert.ok(!existsSync(c.path), `${c.name} removed`);
+  for (const keep of ['package.json', 'src/index.ts', '.env', '.git/objects/pack/p.pack', 'public/logo.png', 'dist/main.js']) assert.ok(existsSync(join(home, 'C/old', keep)), `${keep} untouched`);
+  assert.match(run.items.find(i => i.path.endsWith('node_modules'))!.message!, /npm install/);
+  await assert.rejects(engine.storage.cleanupConfirm({ token: p.token, confirm: 'delete' }), /expired/, 'a token works once');
+  assert.equal(engine.storage.cleanupHistory().length, 3, 'kept in the local cleanup history');
+  assert.ok(!(await engine.storage.candidates()).some(c => pick.some(x => x.path === c.path)), 'removed items leave the list at once');
+});
+
+test('cleanup · every item is re-checked right before removal (changed, running, no longer approved, protected)', async () => {
+  let running = 0;
+  const { engine, home, approve } = makeEngine({ projects: h => [project(h, 'R/a'), project(h, 'R/b', { runningServices: running })] });
+  jsRepo(join(home, 'R/a'), { ageMs: 200 * DAY });
+  jsRepo(join(home, 'R/b'), { ageMs: 200 * DAY });
+  approve('R');
+  engine.storage.updateSettings({ allowDelete: true });
+  await engine.storage.scanAll();
+  const c = await engine.storage.candidates();
+  const aNm = c.find(x => x.path === join(home, 'R/a/node_modules'))!, aCov = c.find(x => x.path === join(home, 'R/a/coverage'))!, bNext = c.find(x => x.path === join(home, 'R/b/.next'))!;
+  const p = await engine.storage.cleanupPreview([aNm.id, aCov.id, bNext.id]);
+  file(join(home, 'R/a/node_modules/new-package/index.js'), 10); // node_modules changed after the preview
+  age(join(home, 'R/a/node_modules'), 0);
+  running = 2; // R/b started its services after the preview
+  const run = await engine.storage.cleanupConfirm({ token: p.token, confirm: 'delete' });
+  const by = (path: string) => run.items.find(i => i.path === path)!;
+  assert.equal(by(aNm.path).state, 'skipped'); assert.match(by(aNm.path).message!, /changed/);
+  assert.equal(by(bNext.path).state, 'skipped'); assert.match(by(bNext.path).message!, /running|active work/);
+  assert.equal(by(aCov.path).state, 'done');
+  assert.ok(existsSync(aNm.path) && existsSync(bNext.path) && !existsSync(aCov.path));
+
+  // A folder that stops being approved: nothing inside it is removed on an older confirmation.
+  const p2 = await engine.storage.cleanupPreview([c.find(x => x.path === join(home, 'R/a/.next'))!.id]);
+  engine.updateLocation(engine.settings().locations[0].id, { paused: true });
+  const run2 = await engine.storage.cleanupConfirm({ token: p2.token, confirm: 'delete' });
+  assert.equal(run2.items[0].state, 'skipped');
+  assert.ok(existsSync(join(home, 'R/a/.next')));
+  // Protected or unknown ids never get a token.
+  const p3 = await engine.storage.cleanupPreview(['not-a-real-id']);
+  assert.equal(p3.token, null);
+});
+
+test('cleanup · your files go to the Trash, worktrees via git worktree remove, Docker via its own command', async () => {
+  const docker = async (): Promise<DockerStorage> => ({ ...(await dockerOff()), available: true, detail: null, buildCache: { bytes: 5 * GB, reclaimableBytes: 4 * GB, count: 10 }, volumes: { bytes: 2 * GB, reclaimableBytes: 2 * GB, count: 3 } });
+  const { engine, home, approve, trashed, ran } = makeEngine({ projects: h => [project(h, 'Dev/topo')], worktree: p => { const g = wtGit(p); return g ? { ...g, mainPath: join(home, 'Dev/topo') } : null; }, docker });
+  withWorktree(home);
+  sparse(join(home, 'Downloads/old-installer.dmg'), 50 * MB, 200 * DAY);
+  approve('Dev'); approve('Downloads');
+  engine.storage.updateSettings({ allowDelete: true });
+  await engine.storage.scanAll();
+  const c = await engine.storage.candidates();
+  const dl = c.find(x => x.group === 'downloads')!, wt = c.find(x => x.group === 'worktrees')!, bc = c.find(x => x.id === 'docker-build-cache')!, vol = c.find(x => x.id === 'docker-volumes')!;
+  assert.equal(dl.method, 'trash');
+  assert.equal(wt.method, 'git-worktree');
+  assert.deepEqual(bc.command, ['docker', 'builder', 'prune', '-f']);
+  assert.equal(vol.removable, false, 'Docker volumes can hold databases — never removed by FileNEX');
+  const p = await engine.storage.cleanupPreview([dl.id, wt.id, bc.id, vol.id]);
+  assert.equal(p.removable, 3);
+  assert.equal(p.requireTyped, true, 'review-carefully items need the typed word');
+  const run = await engine.storage.cleanupConfirm({ token: p.token, confirm: 'delete' });
+  assert.deepEqual(run.items.map(i => i.state), ['done', 'done', 'done']);
+  assert.deepEqual(trashed, [dl.path]);
+  assert.deepEqual(ran.sort(), ['docker builder prune -f', `git -C ${join(home, 'Dev/topo')} worktree remove ${wt.path}`].sort());
+  assert.ok(!run.items.some(i => i.id === vol.id), 'not removable → not in the run at all');
+  assert.ok(existsSync(join(home, 'Dev/topo/.claude/worktrees/agent-acb7068abac617b2c')), 'the worktree with uncommitted changes stays');
 });
 
 test('safety · clearing storage history does not delete any file', async () => {
@@ -590,7 +676,7 @@ test('plan · suggested steps: build output first, idle deps with keep list, wor
   approve('P'); approve('Dev'); approve('Downloads');
   await engine.storage.scanAll();
   const plan = await engine.storage.cleanupPlan();
-  assert.match(plan.headline, /nothing has been deleted/);
+  assert.match(plan.headline, /Nothing is deleted until you confirm/);
   assert.deepEqual(plan.steps.map(s => s.key), ['build', 'idle-deps', 'check-first', 'your-call']);
   const build = plan.steps[0];
   assert.ok(build.items.some(i => i.label === 'old-a/.next'), 'labels are relative to the approved folder');

@@ -7,6 +7,14 @@ import type { PlatformAdapter } from '../platform.interface';
 import { ActionError, mapKillError } from '../errors';
 import { BIG, exec } from '../exec';
 
+/** ps etime "[[dd-]hh:]mm:ss" → milliseconds. */
+export function elapsedMs(etime: string): number | null {
+  const m = etime.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  if (!m) return null;
+  const [, d = '0', h = '0', mi, se] = m;
+  return (((+d * 24 + +h) * 60 + +mi) * 60 + +se) * 1000;
+}
+
 const PRESSURE: Record<string, Pressure> = { '1': 'normal', '2': 'warn', '4': 'critical' };
 
 /** Browsers whose active-tab URL can be read via Apple Events (only when the user turns URL tracking on). */
@@ -33,7 +41,7 @@ export class MacOSAdapter implements PlatformAdapter {
   async listProcesses(): Promise<ProcessInfo[]> {
     // comm and command can both contain spaces, so each is read as the *last* column of its own ps call.
     const [main, comms] = await Promise.all([
-      exec('ps', ['-axo', 'pid=,ppid=,pcpu=,rss=,user=,command='], BIG).then(r => r.stdout),
+      exec('ps', ['-axo', 'pid=,ppid=,pcpu=,rss=,etime=,user=,command='], BIG).then(r => r.stdout),
       exec('ps', ['-axo', 'pid=,comm='], BIG).then(r => r.stdout),
     ]);
     const commOf = new Map<number, string>();
@@ -41,13 +49,15 @@ export class MacOSAdapter implements PlatformAdapter {
       const m = line.match(/^\s*(\d+)\s+(.*)$/);
       if (m) commOf.set(+m[1], m[2].trim());
     }
+    const now = Date.now();
     return main.trim().split('\n').flatMap(line => {
-      const parts = line.trim().match(/^(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+      const parts = line.trim().match(/^(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/);
       if (!parts) return [];
-      const [, pid, ppid, cpu, rss, user, command] = parts;
+      const [, pid, ppid, cpu, rss, etime, user, command] = parts;
       const comm = commOf.get(+pid) ?? command;
       const name = comm.split('/').pop() || comm;
-      return [{ pid: +pid, ppid: +ppid, name, command: command || comm, cpu: +cpu, memory: +rss * 1024, user }];
+      const age = elapsedMs(etime);
+      return [{ pid: +pid, ppid: +ppid, name, command: command || comm, cpu: +cpu, memory: +rss * 1024, user, startedAt: age == null ? undefined : Math.round((now - age) / 1000) * 1000 }];
     });
   }
 
@@ -273,6 +283,17 @@ export class MacOSAdapter implements PlatformAdapter {
   async revealPath(path: string) {
     if (!existsSync(path)) throw new ActionError('gone', 'The file could not be found. It may have been moved or deleted.');
     await exec('open', ['-R', path]).catch(() => { throw new ActionError('unsupported', 'Finder could not show the file.'); });
+  }
+
+  /** macOS 15+: /usr/bin/trash. Older: Finder (the path is passed as an argument, never interpolated into the script). */
+  async trashPath(path: string) {
+    if (!existsSync(path)) throw new ActionError('gone', 'It is no longer there.');
+    if (existsSync('/usr/bin/trash')) {
+      await exec('/usr/bin/trash', [path], { timeout: 120_000 }).catch(e => { throw new ActionError('unsupported', `Could not move it to the Trash (${String(e?.stderr || e?.message || e).trim().slice(0, 120)}).`); });
+      return;
+    }
+    await exec('osascript', ['-e', 'on run argv', '-e', 'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)', '-e', 'end run', path], { timeout: 120_000 })
+      .catch(e => { throw new ActionError('permission', `Finder could not move it to the Trash (${String(e?.stderr || e?.message || e).trim().slice(0, 120)}).`); });
   }
 
   async openTerminal(dir: string) {

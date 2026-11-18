@@ -3,7 +3,7 @@ import { existsSync, readdirSync, statSync, watch, type FSWatcher } from 'node:f
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { JsonFile } from '@nex/config';
-import type { AppControl, ShellOpen } from '@nex/platform-core';
+import type { AppControl, FileTrash, ShellOpen } from '@nex/platform-core';
 import type { Collection, ContextSources, DuplicateGroup, FileRecord, FilenexSettings, IndexedLocation, LocationStatus, ProjectRef, RelatedFile, SearchHit, VersionGroup, WorkContextRef } from './types';
 import { FilenexError } from './errors';
 import { DEFAULT_SETTINGS, approvedLocationFor, isBroadFolder, isInside, locationId, normalizeSettings, validateLocationPath } from './privacy-engine';
@@ -15,7 +15,7 @@ import { buildDuplicateGroups, hashCandidates } from './duplicate-engine';
 import { StorageEngine, type StorageEngineOptions } from './storage-engine';
 
 export type FilenexEngineOptions = {
-  platform: ShellOpen & Pick<AppControl, 'launch'>;
+  platform: ShellOpen & Pick<AppControl, 'launch'> & Partial<FileTrash>;
   dataDir: string;
   /** WorkNEX contexts + DevNEX projects (wired by the Workbench). Neither grants indexing permission. */
   sources: ContextSources;
@@ -29,7 +29,7 @@ export type FilenexEngineOptions = {
   /** Disable timers/watchers (tests drive scans explicitly). */
   background?: boolean;
   /** Storage engine overrides (tests: statfs, docker, git, apparent sizes). */
-  storage?: Partial<Pick<StorageEngineOptions, 'statfs' | 'docker' | 'gitPathState' | 'worktreeGit' | 'sizeMode'>>;
+  storage?: Partial<Pick<StorageEngineOptions, 'statfs' | 'docker' | 'gitPathState' | 'worktreeGit' | 'sizeMode' | 'trash' | 'runCommand'>>;
 };
 
 type RunState = { state: LocationStatus['state']; scanned: number; lastScanAt: string | null; error: string | null };
@@ -63,6 +63,7 @@ export class FilenexEngine {
       dataDir: opts.dataDir, home: this.home, allowlist: () => this.settings(), sources: opts.sources,
       duplicates: () => this.duplicates(), indexed: id => !!this.store.get(id), platform: opts.platform,
       systemLoad: opts.systemLoad, indexBusy: () => this.working, emit: opts.emit, now: opts.now, background: opts.background,
+      trash: opts.platform.trashPath ? p => opts.platform.trashPath!(p) : undefined,
       ...opts.storage,
     });
   }

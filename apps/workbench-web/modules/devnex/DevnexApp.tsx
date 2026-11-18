@@ -13,9 +13,10 @@ import {
 import { localeTag } from '@nex/i18n';
 import { useWorkbench } from '../../shell/context';
 import { PageHeader } from '../../shell/PageHeader';
+import { AgentsPage } from './AgentsPage';
 
 /* ───────────────────────── Types & helpers ───────────────────────── */
-type Page = 'Overview' | 'Projects' | 'Services' | 'Ports' | 'Logs' | 'Environment' | 'Settings';
+type Page = 'Overview' | 'Projects' | 'Services' | 'Agents' | 'Ports' | 'Logs' | 'Environment' | 'Settings';
 type ProjectDetail = { project: Project; git: GitInfo; env: EnvReport; runtime: RuntimeCheck[]; containers: Container[]; issues: HealthIssue[]; ports: PortEntry[] };
 type EnvData = { runtimes: RuntimeTool[]; projects: { id: string; name: string; env: EnvReport; runtime: RuntimeCheck[] }[]; docker: { available: boolean; detail: string | null; containers: Container[] }; updatedAt: string };
 type Confirm =
@@ -36,7 +37,7 @@ const get = async <T,>(path: string): Promise<T> => {
   return j as T;
 };
 
-const PAGES: Page[] = ['Overview', 'Projects', 'Services', 'Ports', 'Logs', 'Environment', 'Settings'];
+const PAGES: Page[] = ['Overview', 'Projects', 'Services', 'Agents', 'Ports', 'Logs', 'Environment', 'Settings'];
 const slugOf = (p: Page) => (p === 'Overview' ? '' : p.toLowerCase());
 const STATUS_TONE: Record<ServiceStatus, string> = { RUNNING: 'ok', STARTING: 'warn', WARNING: 'warn', FAILED: 'bad', STOPPED: 'muted', UNKNOWN: 'system' };
 const STATUS_LABEL: Record<ServiceStatus, string> = { RUNNING: 'Running', STARTING: 'Starting', WARNING: 'Warning', FAILED: 'Failed', STOPPED: 'Stopped', UNKNOWN: 'Unknown' };
@@ -170,6 +171,7 @@ export function DevnexApp() {
             onStartProject={startProject} onOpenFolder={openFolder} />
         : <EmptyState title="Project not found">It may have been removed, or its dev server stopped. <Link href="/devnex/projects">All projects</Link></EmptyState>)}
       {page === 'Services' && <Services services={services} cores={data.system.cpu.cores} highlight={params.get('service')} {...handlers} />}
+      {page === 'Agents' && <AgentsPage setToast={setToast} />}
       {page === 'Ports' && <Ports data={ports} onConfirm={setConfirm} initialQuery={params.get('port') ?? ''} />}
       {page === 'Logs' && <Logs services={services} selected={logService ?? params.get('service')} onSelect={setLogService} />}
       {page === 'Environment' && <Environment data={envData} initialProject={params.get('project')} />}

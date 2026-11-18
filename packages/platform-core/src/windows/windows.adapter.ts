@@ -18,10 +18,10 @@ export class WindowsAdapter implements PlatformAdapter {
 
   async listProcesses(): Promise<ProcessInfo[]> {
     // Parent pids come from Win32_Process (Get-Process has no parent on Windows PowerShell 5).
-    const stdout = await ps("$par=@{}; Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId | ForEach-Object { $par[[int]$_.ProcessId]=[int]$_.ParentProcessId }; Get-Process | Select-Object Id,ProcessName,CPU,WorkingSet64,Path,@{n='Parent';e={$par[[int]$_.Id]}} | ConvertTo-Json -Compress");
+    const stdout = await ps("$par=@{}; $st=@{}; Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate | ForEach-Object { $par[[int]$_.ProcessId]=[int]$_.ParentProcessId; if ($_.CreationDate) { $st[[int]$_.ProcessId]=[DateTimeOffset]::new($_.CreationDate).ToUnixTimeMilliseconds() } }; Get-Process | Select-Object Id,ProcessName,CPU,WorkingSet64,Path,@{n='Parent';e={$par[[int]$_.Id]}},@{n='Started';e={$st[[int]$_.Id]}} | ConvertTo-Json -Compress");
     return asArray(JSON.parse(stdout || '[]')).map((p: any) => ({
       pid: p.Id, ppid: Number(p.Parent) || undefined, name: p.ProcessName, command: p.Path || p.ProcessName,
-      cpu: Number(p.CPU || 0), memory: Number(p.WorkingSet64 || 0), user: '—',
+      cpu: Number(p.CPU || 0), memory: Number(p.WorkingSet64 || 0), user: '—', startedAt: Number(p.Started) || undefined,
     }));
   }
 
@@ -152,6 +152,14 @@ export class WindowsAdapter implements PlatformAdapter {
     if (!existsSync(path)) throw new ActionError('gone', 'The file could not be found. It may have been moved or deleted.');
     // explorer.exe exits with code 1 even on success.
     await exec('explorer.exe', [`/select,${path}`]).catch(() => undefined);
+  }
+
+  /** Recycle Bin via Microsoft.VisualBasic (the path is passed in an environment variable, never interpolated). */
+  async trashPath(path: string) {
+    if (!existsSync(path)) throw new ActionError('gone', 'It is no longer there.');
+    const script = "Add-Type -AssemblyName Microsoft.VisualBasic; $p = $env:NEX_TRASH_PATH; if (Test-Path -LiteralPath $p -PathType Container) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin') }";
+    await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 300_000, env: { ...process.env, NEX_TRASH_PATH: path } })
+      .catch(e => { throw new ActionError('unsupported', `Could not move it to the Recycle Bin (${String(e?.stderr || e?.message || e).trim().slice(0, 120)}).`); });
   }
 
   async openTerminal(dir: string) {

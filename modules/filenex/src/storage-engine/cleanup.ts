@@ -1,14 +1,14 @@
 import { basename } from 'node:path';
 import type { DuplicateGroup } from '../types';
-import type { CleanupCandidate, CleanupRisk, DockerStorage, LargeFile, LocationAnalysis, ProjectActivity, RepositoryStorage, SharedCache, WorktreeStorage } from '../storage-types';
+import type { CleanupCandidate, CleanupMethod, CleanupRisk, DockerStorage, LargeFile, LocationAnalysis, ProjectActivity, RepositoryStorage, SharedCache, WorktreeStorage } from '../storage-types';
 import { isInside } from '../privacy-engine';
 import { typeOf } from '../index-engine';
 import { ago, artifactEntry, dedupeByPath, entryId, labelEntry, type GitStates } from '../dev-storage-engine';
 import { riskOrder } from './classify';
 
 /**
- * Cleanup intelligence: review opportunities, never actions. FileNEX has no delete operation — the preview lists exact
- * paths so the user can decide and act in Finder / Explorer / their package manager themselves.
+ * Cleanup intelligence: review opportunities first. Nothing is removed automatically — the preview lists exact paths,
+ * and only items the user confirms are removed (see executor.ts). Each candidate says how it would be removed.
  */
 
 const DAY = 86_400_000;
@@ -39,8 +39,30 @@ export type CandidateInput = {
   largeOldDays?: number;
 };
 
+type Draft = Omit<CleanupCandidate, 'method' | 'removable' | 'command' | 'keepReason'>;
+
+/** How FileNEX would remove a candidate once the user confirms — and whether it may at all. */
+export function cleanupMethod(c: Draft): Pick<CleanupCandidate, 'method' | 'command' | 'removable' | 'keepReason'> {
+  let method: CleanupMethod = 'none';
+  let command: string[] | undefined;
+  if (c.group === 'worktrees') method = 'git-worktree';
+  else if ((c.group === 'build' || c.group === 'cache' || c.group === 'dependencies') && c.regeneratable) method = 'delete';
+  else if (c.group === 'logs' || c.group === 'downloads' || c.group === 'large-old' || c.group === 'duplicates') method = 'trash';
+  else if (c.id === 'docker-build-cache') { method = 'command'; command = ['docker', 'builder', 'prune', '-f']; }
+  else if (c.id === 'docker-images') { method = 'command'; command = ['docker', 'image', 'prune', '-a', '-f']; }
+  else if (c.group === 'shared-cache') {
+    command = c.id === 'shared-npm' ? ['npm', 'cache', 'clean', '--force'] : c.id === 'shared-pnpm' ? ['pnpm', 'store', 'prune'] : c.id === 'shared-yarn' ? ['yarn', 'cache', 'clean'] : undefined;
+    if (command) method = 'command';
+  }
+  const keepReason = c.risk === 'PROTECTED' ? 'Protected — FileNEX never removes it.'
+    : method === 'none' ? (c.id === 'docker-volumes' ? 'Volumes can hold databases — review them with Docker yourself.' : 'FileNEX doesn’t remove this kind of item.')
+    : !c.recoverable ? (c.group === 'worktrees' ? 'Still in use — FileNEX won’t remove it yet.' : 'In use or part of active work — FileNEX won’t remove it.')
+    : undefined;
+  return { method, command, removable: !keepReason, keepReason };
+}
+
 export function buildCandidates(i: CandidateInput): CleanupCandidate[] {
-  const out: CleanupCandidate[] = [];
+  const out: Draft[] = [];
   const now = i.now;
   const worktrees = i.worktrees ?? [];
 
@@ -116,7 +138,8 @@ export function buildCandidates(i: CandidateInput): CleanupCandidate[] {
       c.reason = `Used today (WorkNEX). ${c.reason}`;
     }
   }
-  return dedupeById(out).map(c => labelEntry(c, i.projects, worktrees)).sort((a, b) => riskOrder[a.risk] - riskOrder[b.risk] || b.bytes - a.bytes);
+  return dedupeById(out).map(c => labelEntry(c, i.projects, worktrees)).map(c => ({ ...c, ...cleanupMethod(c) }))
+    .sort((a, b) => riskOrder[a.risk] - riskOrder[b.risk] || b.bytes - a.bytes);
 }
 
 const dedupeById = <T extends { id: string }>(xs: T[]) => [...new Map(xs.map(x => [x.id, x])).values()];
@@ -140,8 +163,8 @@ export function recoverySummary(cands: CleanupCandidate[]) {
 }
 
 /**
- * Cleanup preview: exactly what the selection covers. Nothing is deleted — FileNEX has no delete operation.
- * Protected or unknown ids are refused and reported, never silently included.
+ * Cleanup preview: exactly what the selection covers and how each item would be removed. The preview itself deletes
+ * nothing. Protected or unknown ids are refused and reported, never silently included.
  */
 export function cleanupPreview(cands: CleanupCandidate[], ids: string[]) {
   const byId = new Map(cands.map(c => [c.id, c]));
@@ -154,12 +177,16 @@ export function cleanupPreview(cands: CleanupCandidate[], ids: string[]) {
     totalBytes: unique.reduce((n, c) => n + c.bytes, 0),
     projectsAffected: projects.length,
     projects,
-    items: selected.map(c => ({ id: c.id, path: c.path, name: c.name, label: c.label ?? c.name, detail: c.detail ?? null, bytes: c.bytes, risk: c.risk, regeneratable: c.regeneratable, regenerate: c.regenerate ?? null, reason: c.reason, projectName: c.projectName ?? null, group: c.group })),
+    items: selected.map(c => ({ id: c.id, path: c.path, name: c.name, label: c.label ?? c.name, detail: c.detail ?? null, bytes: c.bytes, risk: c.risk, regeneratable: c.regeneratable, regenerate: c.regenerate ?? null, reason: c.reason, projectName: c.projectName ?? null, group: c.group, method: c.method, command: c.command ? c.command.join(' ') : null, removable: c.removable, keepReason: c.keepReason ?? null })),
+    /** Bytes per removal method (removable items only, each byte once). */
+    byMethod: (['delete', 'trash', 'git-worktree', 'command'] as const).map(m => ({ method: m, count: unique.filter(c => c.removable && c.method === m).length, bytes: unique.filter(c => c.removable && c.method === m).reduce((n, c) => n + c.bytes, 0) })).filter(x => x.count),
+    removable: selected.filter(c => c.removable).length,
     /** Selected items inside another selected folder — their bytes are counted once. */
     overlapping: selected.length - unique.length,
     unknown,
-    deletes: false as const,
-    note: 'FileNEX does not delete anything. Review these exact paths, then remove what you no longer need yourself (Finder / Explorer, or the package manager / Docker commands shown).',
+    /** Typing "delete" is required: anything marked Review carefully, or more than 20 GB in total. */
+    requireTyped: selected.some(c => c.removable && c.risk === 'REVIEW_CAREFULLY') || unique.filter(c => c.removable).reduce((n, c) => n + c.bytes, 0) > 20 * 1024 ** 3,
+    note: 'Nothing has been deleted yet. Check these exact paths. Regeneratable folders are deleted permanently (the Trash would not free space); your files go to the Trash.',
   };
 }
 

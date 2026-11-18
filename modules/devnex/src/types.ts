@@ -78,6 +78,8 @@ export type PortEntry = {
   serviceName: string | null;
   /** Process could not be tied to any known project. */
   unknown: boolean;
+  /** Started by an AI agent session (Agent Monitor), if known. */
+  agent?: { sessionId: string; toolName: string; ended: boolean } | null;
 };
 
 export type PortConflict = {

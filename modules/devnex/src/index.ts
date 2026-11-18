@@ -9,3 +9,5 @@ export * from './git-engine';
 export * from './docker-engine';
 export * from './service-health';
 export * from './module';
+export * from './agent-engine';
+export * from './agent-engine/monitor';

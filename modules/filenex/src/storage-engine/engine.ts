@@ -5,7 +5,7 @@ import { JsonFile } from '@nex/config';
 import { exec, type ShellOpen } from '@nex/platform-core';
 import type { AttentionItem } from '@nex/shared';
 import type { ContextSources, DuplicateGroup, FilenexSettings, WorkContextRef } from '../types';
-import type { CleanupCandidate, DiskVolume, DockerStorage, LocationAnalysis, ProjectActivity, RepoStorageSnapshot, RepositoryStorage, SharedCache, StorageCategorySnapshot, StorageSettings, WorktreeGit, WorktreeStorage } from '../storage-types';
+import type { CleanupCandidate, CleanupHistoryEntry, CleanupRun, DiskVolume, DockerStorage, LocationAnalysis, ProjectActivity, RepoStorageSnapshot, RepositoryStorage, SharedCache, StorageCategorySnapshot, StorageSettings, WorktreeGit, WorktreeStorage } from '../storage-types';
 import { FilenexError } from '../errors';
 import { approvedLocationFor, isInside } from '../privacy-engine';
 import { fileId } from '../index-engine';
@@ -16,6 +16,7 @@ import { analyzeLocation, measureFolder, relPath } from './walker';
 import { buildCandidates, cleanupPreview, cleanupReportMarkdown, largeFileRisk, recoverySummary } from './cleanup';
 import { dockerStorage } from './docker';
 import { buildCleanupPlan, planMarkdown } from './plan';
+import { checkBeforeRemoving, errorText, removeItem, seenOf, type Seen } from './executor';
 import { sharedCacheLocations } from './shared';
 import { DEFAULT_STORAGE_SETTINGS, normalizeStorageSettings } from './settings';
 
@@ -44,7 +45,13 @@ export type StorageEngineOptions = {
   gitPathState?: (repo: string, path: string) => Promise<'ignored' | 'tracked' | 'untracked' | null>;
   worktreeGit?: (path: string) => Promise<WorktreeGit | null>;
   sizeMode?: 'allocated' | 'apparent';
+  /** Move to the OS Trash (platform adapter). Only used for items the user confirmed. */
+  trash?: (path: string) => Promise<void>;
+  /** Run a fixed cleanup command (git worktree remove, docker … prune, npm cache clean). Tests inject a fake. */
+  runCommand?: (cmd: string, args: string[]) => Promise<void>;
 };
+
+const PREVIEW_TTL = 5 * 60_000;
 
 type Run = { locationId: string; label: string; entries: number; reposDone: number; reposTotal: number; index: number; of: number; startedAt: string };
 type QueueItem = { id: string; force: boolean; manual: boolean };
@@ -80,8 +87,9 @@ export async function gitWorktreeInfo(path: string): Promise<WorktreeGit | null>
 }
 
 /**
- * Storage Intelligence for FileNEX. Know where your space went — analyze first, delete deliberately (FileNEX never deletes).
+ * Storage Intelligence for FileNEX. Know where your space went — analyze first, delete deliberately.
  * Every folder walk is inside an approved FileNEX location; DevNEX registration and WorkNEX activity never grant access.
+ * Nothing is removed automatically: only items the user confirmed in a preview (with deleting allowed in Settings).
  */
 export class StorageEngine {
   private readonly settingsFile: JsonFile<StorageSettings>;
@@ -100,11 +108,15 @@ export class StorageEngine {
   private gitCache = new Map<string, { at: number; value: 'ignored' | 'tracked' | 'untracked' | null }>();
   private candCache: { at: number; value: CleanupCandidate[] } | null = null;
   private wtCache = new Map<string, { at: number; value: WorktreeGit | null }>();
+  private previews = new Map<string, { at: number; seen: Seen[]; labels: Map<string, { label: string; bytes: number; regenerate: string | null }>; requireTyped: boolean }>();
+  private cleanRun: CleanupRun | null = null;
+  private readonly cleanLog: JsonFile<CleanupHistoryEntry[]>;
 
   constructor(private readonly opts: StorageEngineOptions) {
     this.settingsFile = new JsonFile(join(opts.dataDir, 'storage-settings.json'), () => ({ ...DEFAULT_STORAGE_SETTINGS }), raw => normalizeStorageSettings(raw));
     this.sharedFile = new JsonFile(join(opts.dataDir, 'shared-caches.json'), () => ({}), raw => (raw && typeof raw === 'object' ? raw as Record<string, { bytes: number; measuredAt: string }> : {}));
     this.history = new StorageHistory(join(opts.dataDir, 'index.sqlite'));
+    this.cleanLog = new JsonFile(join(opts.dataDir, 'cleanup-history.json'), () => [], raw => (Array.isArray(raw) ? raw as CleanupHistoryEntry[] : []));
   }
 
   private now() { return this.opts.now?.() ?? Date.now(); }
@@ -359,7 +371,7 @@ export class StorageEngine {
     const value = buildCandidates({
       repos, analyses: this.currentAnalyses(), projects: src.projects, worktrees: await this.worktrees(), duplicates: this.opts.duplicates(), docker: await this.docker().catch(() => null),
       shared: this.sharedCaches(), recentPaths, now: this.now(),
-    });
+    }).filter(c => c.path.startsWith('docker:') || existsSync(c.path)); // already removed → gone from the list right away
     this.candCache = { at: this.now(), value };
     return value;
   }
@@ -516,10 +528,94 @@ export class StorageEngine {
     return { repo, git, growth, old, gitClean: git ? git.changed === 0 && git.untracked === 0 : null, inactiveThresholdDays: st.inactiveDays };
   }
 
+  /** Preview a selection. Returns a one-time token (5 minutes) that a confirmed cleanup must present. */
   async cleanupPreview(ids: unknown) {
-    if (!Array.isArray(ids) || !ids.length || ids.some(x => typeof x !== 'string')) throw new FilenexError('bad_request', 'Choose at least one item to preview.');
-    return cleanupPreview(await this.candidates(), ids as string[]);
+    if (!Array.isArray(ids) || !ids.length || ids.length > 5000 || ids.some(x => typeof x !== 'string')) throw new FilenexError('bad_request', 'Choose at least one item to preview.');
+    const cands = await this.candidates();
+    const p = cleanupPreview(cands, ids as string[]);
+    const removable = p.items.filter(i => i.removable).map(i => cands.find(c => c.id === i.id)!)
+      // Outer folders first: anything inside a removed folder goes with it.
+      .sort((a, b) => a.path.length - b.path.length);
+    let token: string | null = null;
+    for (const [k, v] of this.previews) if (this.now() - v.at > PREVIEW_TTL) this.previews.delete(k);
+    if (removable.length) {
+      token = randomUUID();
+      const seen = await Promise.all(removable.map(seenOf));
+      this.previews.set(token, { at: this.now(), seen, requireTyped: p.requireTyped, labels: new Map(removable.map(c => [c.id, { label: c.label ?? c.name, bytes: c.bytes, regenerate: c.regenerate ?? null }])) });
+    }
+    return { ...p, token, allowDelete: this.settings().allowDelete, expiresInSeconds: PREVIEW_TTL / 1000 };
   }
+
+  /**
+   * Remove what the user confirmed in a preview (token), after re-checking every item. Requires "Allow FileNEX to delete".
+   * Runs in the background; poll cleanupStatus(). Regeneratable folders are deleted, your files go to the Trash.
+   */
+  async cleanupConfirm(body: unknown): Promise<CleanupRun> {
+    const b = (body && typeof body === 'object' ? body : {}) as { token?: unknown; confirm?: unknown };
+    if (!this.settings().allowDelete) throw new FilenexError('forbidden', 'Deleting is turned off. Turn on “Allow FileNEX to delete” in FileNEX › Settings › Storage first.');
+    if (this.cleanRun?.state === 'running') throw new FilenexError('conflict', 'A cleanup is already running.');
+    const t = typeof b.token === 'string' ? this.previews.get(b.token) : undefined;
+    if (!t || this.now() - t.at > PREVIEW_TTL) throw new FilenexError('bad_request', 'This preview has expired. Preview the cleanup again.');
+    if (t.requireTyped && (typeof b.confirm !== 'string' || b.confirm.trim().toLowerCase() !== 'delete')) throw new FilenexError('bad_request', 'Type “delete” to confirm.');
+    this.previews.delete(b.token as string);
+    const run: CleanupRun = {
+      id: randomUUID().slice(0, 12), state: 'running', startedAt: new Date(this.now()).toISOString(), finishedAt: null, freeBefore: null, freeAfter: null,
+      items: t.seen.map(s => { const l = t.labels.get(s.id)!; return { id: s.id, label: l.label, path: s.path, method: s.method, bytes: l.bytes, state: 'pending' as const, regenerate: l.regenerate }; }),
+    };
+    this.cleanRun = run;
+    const job = this.executeRun(run, t.seen);
+    if (this.opts.background === false) await job; else void job;
+    return this.cleanupStatus()!;
+  }
+
+  private async primaryFree() { this.volCache = null; return (await this.volumes().catch(() => [])).find(v => v.primary)?.freeBytes ?? null; }
+
+  private async executeRun(run: CleanupRun, seen: Seen[]) {
+    try {
+      run.freeBefore = await this.primaryFree();
+      // Fresh inputs: candidates, running services, worktree Git state.
+      this.invalidate(); this.srcCache = null; this.wtCache.clear(); this.gitCache.clear();
+      const cands = await this.candidates();
+      const src = await this.sources();
+      const ctx = { locations: this.activeLocations(), projects: src.projects, worktrees: await this.worktrees() };
+      const removed: string[] = [];
+      for (let i = 0; i < seen.length; i++) {
+        const s = seen[i], item = run.items[i];
+        item.state = 'running';
+        const parent = removed.find(p => isInside(s.path, p) && p !== s.path);
+        if (parent && !existsSync(s.path)) { item.state = 'done'; item.message = 'Removed together with the folder it was in.'; continue; }
+        const c = cands.find(x => x.id === s.id);
+        const why = await checkBeforeRemoving(c, s, ctx);
+        if (why) { item.state = 'skipped'; item.message = why; continue; }
+        try {
+          item.message = await removeItem(c!, { trash: this.opts.trash, worktreeGit: this.opts.worktreeGit ?? gitWorktreeInfo, run: this.opts.runCommand });
+          item.state = 'done';
+          if (c!.method !== 'command') removed.push(c!.path);
+        } catch (e) { item.state = 'failed'; item.message = errorText(e); }
+      }
+    } catch (e) {
+      for (const it of run.items) if (it.state === 'pending' || it.state === 'running') { it.state = 'failed'; it.message = errorText(e); }
+    } finally {
+      run.freeAfter = await this.primaryFree();
+      run.state = 'done';
+      run.finishedAt = new Date(this.now()).toISOString();
+      const log = run.items.filter(i => i.state === 'done' || i.state === 'failed').map<CleanupHistoryEntry>(i => ({ at: run.finishedAt!, label: i.label, path: i.path, method: i.method, bytes: i.bytes, ok: i.state === 'done', message: i.message }));
+      this.cleanLog.set([...log, ...this.cleanLog.get()].slice(0, 300));
+      this.invalidate(); this.dockerCache = null; this.gitCache.clear(); this.wtCache.clear();
+      const done = run.items.filter(i => i.state === 'done');
+      if (done.some(i => i.id.startsWith('shared-')) && this.settings().sharedCaches && this.opts.background !== false) void this.measureShared(true);
+      // Re-measure the folders that changed (incremental: unchanged developer folders are reused).
+      const locs = new Set(done.map(i => approvedLocationFor(i.path, this.opts.allowlist())?.id).filter((x): x is string => !!x));
+      if (this.opts.background !== false) for (const id of locs) this.enqueue(id, { manual: true });
+      this.emit('filenex.storage.cleaned', { removed: done.length, bytes: done.reduce((n, i) => n + i.bytes, 0), freedBytes: run.freeBefore != null && run.freeAfter != null ? run.freeAfter - run.freeBefore : null });
+    }
+  }
+
+  /** The current / last cleanup run (progress and result). */
+  cleanupStatus(): CleanupRun | null { return this.cleanRun ? { ...this.cleanRun, items: this.cleanRun.items.map(i => ({ ...i })) } : null; }
+
+  /** What FileNEX removed (or failed to), newest first — kept on this computer. */
+  cleanupHistory(limit = 50) { return this.cleanLog.get().slice(0, Math.max(1, Math.min(300, limit))); }
 
   /** Suggested, explained cleanup plan (deterministic). */
   async cleanupPlan() {
@@ -595,6 +691,15 @@ export class StorageEngine {
         title: health.status === 'critical' ? 'Disk space is critically low' : 'Disk space is low',
         description: `${(volume.freeBytes / GB).toFixed(1)} GB free of ${(volume.totalBytes / GB).toFixed(0)} GB. ${health.reasons.slice(1).join(' ')}`.trim(),
         action: '/filenex/storage', actionLabel: 'Review Storage', timestamp: t,
+      });
+    }
+    if (this.currentAnalyses().length) {
+      const build = recoverySummary(await this.candidates()).groups.find(g => g.group === 'build');
+      if (build && build.bytes >= 10 * GB) items.push({
+        id: 'filenex:storage:build', sourceModule: 'FileNEX', severity: 'info',
+        title: `Build output uses ${(build.bytes / GB).toFixed(1)} GB`,
+        description: 'Regeneratable — rebuilt by the next build. The Suggested plan can clear it in one step, after you confirm.',
+        action: '/filenex/storage/cleanup', actionLabel: 'Review cleanup', timestamp: t,
       });
     }
     if (this.settings().analyzeDevProjects) {
